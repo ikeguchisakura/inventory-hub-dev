@@ -3957,13 +3957,21 @@ function tryBuildSiTable() {
     const orderQty  = salesMap[key]               || 0;
     const combined  = prevDay + orderQty;
     const available = parseInt(s['販売可能数合計']) || 0;
+    const sales30   = parseInt(s['直近30日販売数']) || 0;
 
     // 自社在庫（スマレジ取込済みデータから品番でマッチ）
     const ownStock = getSiOwnStock(s['CS品番'] || '');
 
-    // 推奨フォロー数（合算数と販売可能数の差を埋める、ただし自社在庫上限）
-    const deficit     = Math.max(0, combined - available);
-    const recommended = ownStock !== null ? Math.min(deficit, ownStock.total) : deficit;
+    // 推奨フォロー数（新ロジック）
+    // ① 自社在庫3以下はフォロー無し
+    // ② 直近30日販売数 - 販売可能数 = 不足数（マイナスは0）
+    // ③ フォロー数は自社在庫合計を上限
+    const ownTotal = ownStock ? ownStock.total : 0;
+    let recommended = 0;
+    if (ownTotal > 3) {
+      const deficit = Math.max(0, sales30 - available);
+      recommended = Math.min(deficit, ownTotal);
+    }
 
     siRows.push({
       key,
@@ -3972,8 +3980,7 @@ function tryBuildSiTable() {
       color:     s['カラー']  || '',
       size:      s['サイズ']  || '',
       prevDay, orderQty, combined, available,
-      sales30:   parseInt(s['直近30日販売数']) || 0,
-      ownStock, recommended,
+      sales30, ownStock, recommended,
     });
   });
 
