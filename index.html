@@ -3880,30 +3880,36 @@ function parseCsvToObjects(buffer) {
 // ── ファイル読み込み ──
 function handleSiStockCsv(e) {
   const file = e.target.files[0]; if (!file) return;
-  const reader = new FileReader();
-  reader.onload = ev => {
-    siStockData = parseCsvToObjects(ev.target.result);
+  readFileAutoEncoding(file, text => {
+    const { headers, rows } = parseCSV(text);
+    siStockData = rows.map(row => {
+      const obj = {};
+      headers.forEach((h, i) => { obj[h.trim()] = (row[i] || '').trim(); });
+      return obj;
+    });
     document.getElementById('siStockLabel').textContent = `✅ ${file.name}（${siStockData.length}行）`;
     document.getElementById('siStockZone').style.borderColor = 'var(--mint)';
     document.getElementById('siStockZone').style.background = 'var(--mint-dim)';
     toast(`📊 在庫分析データを読み込みました（${siStockData.length}行）`, 'success');
     tryBuildSiTable();
-  };
-  reader.readAsArrayBuffer(file);
+  });
 }
 
 function handleSiSalesCsv(e) {
   const file = e.target.files[0]; if (!file) return;
-  const reader = new FileReader();
-  reader.onload = ev => {
-    siSalesData = parseCsvToObjects(ev.target.result);
+  readFileAutoEncoding(file, text => {
+    const { headers, rows } = parseCSV(text);
+    siSalesData = rows.map(row => {
+      const obj = {};
+      headers.forEach((h, i) => { obj[h.trim()] = (row[i] || '').trim(); });
+      return obj;
+    });
     document.getElementById('siSalesLabel').textContent = `✅ ${file.name}（${siSalesData.length}行）`;
     document.getElementById('siSalesZone').style.borderColor = 'var(--mint)';
     document.getElementById('siSalesZone').style.background = 'var(--mint-dim)';
     toast(`🛒 売上数量データを読み込みました（${siSalesData.length}行）`, 'success');
     tryBuildSiTable();
-  };
-  reader.readAsArrayBuffer(file);
+  });
 }
 
 // ── 両CSVが揃ったら突合・テーブル構築 ──
@@ -3966,6 +3972,7 @@ function tryBuildSiTable() {
       color:     s['カラー']  || '',
       size:      s['サイズ']  || '',
       prevDay, orderQty, combined, available,
+      sales30:   parseInt(s['直近30日販売数']) || 0,
       ownStock, recommended,
     });
   });
@@ -3982,7 +3989,7 @@ function tryBuildSiTable() {
 // スマレジ取込済みデータから自社在庫を取得
 function getSiOwnStock(csSku) {
   if (!csSku) return null;
-  const products = JSON.parse(localStorage.getItem('ppt_products') || '[]');
+  const products = S.products || [];
   const match = products.find(p => String(p.itemNo||'').trim() === String(csSku).trim());
   if (!match) return null;
   const wh = match.warehouse||0, on = match.shopify||0;
@@ -4047,7 +4054,7 @@ function renderSiTable() {
       </td>
       <td class="text-right mono">${r.available}</td>
       <td class="text-right">${ownTotalHtml}</td>
-      <td>${storeHtml}</td>
+      <td class="text-right mono" style="color:var(--ink2)">${r.sales30 || '—'}</td>
       <td class="text-right mono" style="color:var(--blue);font-weight:700">${r.recommended}</td>
       <td class="text-center">
         <input type="number" class="si-qty-input${userQty !== '' ? ' changed' : ''}"
@@ -4284,12 +4291,10 @@ function setupDropZone(zoneId, inputId, handler) {
             <th>商品名</th>
             <th>カラー</th>
             <th>サイズ</th>
-            <th class="text-right" title="前日販売数 + 注文数">合算数<br><span style="font-size:9px;font-weight:400;color:var(--muted)">前日+注文</span></th>
+            <th class="text-right" title="前日販売数 + 注文数">販売合計<br><span style="font-size:9px;font-weight:400;color:var(--muted)">前日+注文</span></th>
             <th class="text-right">販売可能数<br><span style="font-size:9px;font-weight:400;color:var(--muted)">ZOZO</span></th>
             <th class="text-right" title="倉庫+オンライン+代官山+名古屋+神戸+bazar">自社在庫<br><span style="font-size:9px;font-weight:400;color:var(--muted)">合計</span></th>
-            <th>
-              <span title="倉庫/オンライン/代官山/名古屋/神戸/bazar">店舗別在庫</span>
-            </th>
+            <th class="text-right" title="直近30日販売数（ZOZO在庫分析X列）">直近30日<br><span style="font-size:9px;font-weight:400;color:var(--muted)">販売数</span></th>
             <th class="text-right">推奨<br><span style="font-size:9px;font-weight:400;color:var(--muted)">フォロー</span></th>
             <th style="width:80px" class="text-center">フォロー数<br><span style="font-size:9px;font-weight:400;color:var(--muted)">確定入力</span></th>
             <th>メモ</th>
