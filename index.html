@@ -313,6 +313,9 @@ a.lnk { color: var(--blue); text-decoration: underline; cursor: pointer; }
 .si-store-chip.hi { background: var(--mint-dim); color: #007a57; }
 .si-section-head { display: flex; align-items: center; justify-content: space-between; padding: 10px 20px; background: var(--surface2); border-bottom: 1px solid var(--rule); font-size: 12px; font-weight: 700; }
 .si-print-area { display: none; }
+#page-shipinstruct th { padding: 7px 6px; font-size: 9px; }
+#page-shipinstruct td { padding: 6px 6px; font-size: 12px; }
+#page-shipinstruct table { border-spacing: 0; width: 100%; }
 @media print {
   nav, .si-upload-grid, .si-kpi-row, .toolbar, .si-print-hide { display: none !important; }
   .si-print-area { display: block !important; }
@@ -3975,10 +3978,12 @@ function tryBuildSiTable() {
 
     siRows.push({
       key,
-      csSku:     s['CS品番']  || '',
-      name:      s['商品名']  || '',
-      color:     s['カラー']  || '',
-      size:      s['サイズ']  || '',
+      csSku:      s['CS品番']    || '',
+      name:       s['商品名']    || '',
+      color:      s['カラー']    || '',
+      size:       s['サイズ']    || '',
+      priceType:  s['価格タイプ'] || '',
+      salesType:  s['販売タイプ'] || '',
       prevDay, orderQty, combined, available,
       sales30, ownStock, recommended,
     });
@@ -4051,28 +4056,29 @@ function renderSiTable() {
       : `<span style="color:var(--muted)">—</span>`;
 
     return `<tr class="${rowCls}">
-      <td class="mono text-center" style="color:var(--muted);font-size:11px">${statusIcon} ${i+1}</td>
-      <td class="mono fw7" style="font-size:12px">${r.csSku}</td>
-      <td style="font-size:12px;max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${r.name}">${r.name}</td>
-      <td style="font-size:12px">${r.color}</td>
-      <td style="font-size:12px">${r.size}</td>
-      <td class="text-right mono fw7">${r.combined}
+      <td class="mono text-center" style="color:var(--muted);font-size:11px;width:36px">${statusIcon} ${i+1}</td>
+      <td class="mono fw7" style="font-size:12px;width:72px;white-space:nowrap">${r.csSku}</td>
+      <td style="font-size:12px;min-width:180px;max-width:240px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${r.name}">${r.name}</td>
+      <td style="font-size:12px;width:70px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${r.color}">${r.color}</td>
+      <td style="font-size:12px;width:55px;white-space:nowrap">${r.size}</td>
+      <td style="font-size:11px;color:var(--ink2);width:52px;white-space:nowrap">${r.priceType||'—'}</td>
+      <td style="font-size:11px;color:var(--ink2);width:48px;white-space:nowrap">${r.salesType||'—'}</td>
+      <td class="text-right mono fw7" style="width:70px">${r.combined}
         <div style="font-size:10px;color:var(--muted);font-weight:400">${r.prevDay}+${r.orderQty}</div>
       </td>
-      <td class="text-right mono">${r.available}</td>
-      <td class="text-right">${ownTotalHtml}</td>
-      <td class="text-right mono" style="color:var(--ink2)">${r.sales30 || '—'}</td>
-      <td class="text-right mono" style="color:var(--blue);font-weight:700">${r.recommended}</td>
-      <td class="text-center">
+      <td class="text-right mono" style="width:70px">${r.available}</td>
+      <td class="text-right" style="width:70px">${ownTotalHtml}</td>
+      <td class="text-right mono" style="color:var(--ink2);width:70px">${r.sales30 || '—'}</td>
+      <td class="text-right mono" style="color:var(--blue);font-weight:700;width:55px">${r.recommended}</td>
+      <td class="text-center" style="width:72px">
         <input type="number" class="si-qty-input${userQty !== '' ? ' changed' : ''}"
           min="0" value="${userQty}"
           placeholder="${r.recommended}"
           oninput="onSiQtyInput('${key}', this)"
           onchange="onSiQtyInput('${key}', this)">
       </td>
-      <td>
+      <td style="min-width:120px;max-width:160px">
         <input type="text" class="si-memo-input" value="${userMemo}"
-          placeholder="直営優先・入荷待ちなど"
           oninput="onSiMemoInput('${key}', this)">
       </td>
     </tr>`;
@@ -4119,11 +4125,19 @@ function siAutoFill() {
 
 // CSV出力
 function exportSiCsv() {
-  const header = ['CS品番','商品名','カラー','サイズ','前日販売数','注文数','合算数','販売可能数(ZOZO)','自社在庫合計','倉庫','オンライン','代官山','名古屋','神戸','bazar','推奨フォロー数','確定フォロー数','メモ'];
+  const header = ['CS品番','商品名','カラー','サイズ','価格タイプ','販売タイプ','前日販売数','注文数','販売合計','販売可能数(ZOZO)','自社在庫合計','直近30日販売数','推奨フォロー数','確定フォロー数','メモ'];
   const rows = siRows.map(r => {
-    const own = r.ownStock || {total:0,warehouse:0,online:0,daikanyama:0,nagoya:0,kobe:0,bazar:0};
+    const own = r.ownStock || {total:0};
     const qty = siUserQty[r.key] !== undefined ? siUserQty[r.key] : r.recommended;
-    return [r.csSku, r.name, r.color, r.size, r.prevDay, r.orderQty, r.combined, r.available, own.total, own.warehouse, own.online, own.daikanyama, own.nagoya, own.kobe, own.bazar, r.recommended, qty, siUserMemo[r.key]||''];
+    return [
+      r.csSku, r.name, r.color, r.size,
+      r.priceType, r.salesType,
+      r.prevDay, r.orderQty, r.combined,
+      r.available, own.total,
+      r.sales30,
+      r.recommended, qty,
+      siUserMemo[r.key]||''
+    ];
   });
   const csv = [header, ...rows].map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
   const bom = '\uFEFF';
@@ -4290,21 +4304,23 @@ function setupDropZone(zoneId, inputId, handler) {
       </div>
     </div>
     <div class="tbl-wrap">
-      <table>
+      <table style="table-layout:fixed;width:100%">
         <thead>
           <tr style="background:var(--surface2)">
-            <th style="width:40px">#</th>
-            <th>CS品番</th>
+            <th style="width:36px">#</th>
+            <th style="width:72px">CS品番</th>
             <th>商品名</th>
-            <th>カラー</th>
-            <th>サイズ</th>
-            <th class="text-right" title="前日販売数 + 注文数">販売合計<br><span style="font-size:9px;font-weight:400;color:var(--muted)">前日+注文</span></th>
-            <th class="text-right">販売可能数<br><span style="font-size:9px;font-weight:400;color:var(--muted)">ZOZO</span></th>
-            <th class="text-right" title="倉庫+オンライン+代官山+名古屋+神戸+bazar">自社在庫<br><span style="font-size:9px;font-weight:400;color:var(--muted)">合計</span></th>
-            <th class="text-right" title="直近30日販売数（ZOZO在庫分析X列）">直近30日<br><span style="font-size:9px;font-weight:400;color:var(--muted)">販売数</span></th>
-            <th class="text-right">推奨<br><span style="font-size:9px;font-weight:400;color:var(--muted)">フォロー</span></th>
-            <th style="width:80px" class="text-center">フォロー数<br><span style="font-size:9px;font-weight:400;color:var(--muted)">確定入力</span></th>
-            <th>メモ</th>
+            <th style="width:70px">カラー</th>
+            <th style="width:55px">サイズ</th>
+            <th style="width:52px">価格タイプ</th>
+            <th style="width:48px">販売タイプ</th>
+            <th class="text-right" style="width:68px" title="前日販売数 + 注文数">販売合計<br><span style="font-size:9px;font-weight:400;color:var(--muted)">前日+注文</span></th>
+            <th class="text-right" style="width:64px">販売可能数<br><span style="font-size:9px;font-weight:400;color:var(--muted)">ZOZO</span></th>
+            <th class="text-right" style="width:60px" title="倉庫+オンライン+代官山+名古屋+神戸+bazar">自社在庫<br><span style="font-size:9px;font-weight:400;color:var(--muted)">合計</span></th>
+            <th class="text-right" style="width:60px" title="直近30日販売数（ZOZO在庫分析X列）">直近30日<br><span style="font-size:9px;font-weight:400;color:var(--muted)">販売数</span></th>
+            <th class="text-right" style="width:50px">推奨<br><span style="font-size:9px;font-weight:400;color:var(--muted)">フォロー</span></th>
+            <th style="width:72px" class="text-center">フォロー数<br><span style="font-size:9px;font-weight:400;color:var(--muted)">確定入力</span></th>
+            <th style="width:130px">メモ</th>
           </tr>
         </thead>
         <tbody id="siTableBody"></tbody>
