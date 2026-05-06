@@ -797,8 +797,8 @@ a.lnk { color: var(--blue); text-decoration: underline; cursor: pointer; }
         <option value="received">入荷済み</option>
       </select>
       <div class="spacer"></div>
-      <button class="btn btn-ghost btn-sm" onclick="document.getElementById('poFileInput').click()">📂 発注CSVを取込</button>
-      <input type="file" id="poFileInput" accept=".csv" style="display:none" onchange="handlePoCsv(event)">
+      <button class="btn btn-ghost btn-sm" onclick="triggerPoFileInput()">📂 発注CSVを取込</button>
+      <input type="file" id="poFileInput" accept=".csv" style="position:absolute;left:-9999px;opacity:0;width:1px;height:1px" onchange="handlePoCsv(event)">
     </div>
     <div class="tbl-wrap">
       <table>
@@ -2030,6 +2030,11 @@ function updateOrderKpi(){
 // 発注CSV取込
 // ════════════════════════════════
 let _poPreviewRows = [];
+
+function triggerPoFileInput() {
+  const input = document.getElementById('poFileInput');
+  if (input) input.click();
+}
 
 function handlePoCsv(e) {
   const file = e.target.files[0]; if (!file) return;
