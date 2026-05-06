@@ -332,7 +332,6 @@ a.lnk { color: var(--blue); text-decoration: underline; cursor: pointer; }
     <button class="nav-tab" onclick="goPage('forecast')">📈 発注予測</button>
     <button class="nav-tab" onclick="goPage('order')">🏭 工場発注</button>
     <button class="nav-tab" onclick="goPage('shipinstruct')">📋 出荷指示</button>
-    <button class="nav-tab" onclick="goPage('shipinstruct')">📋 出荷指示</button>
   </div>
   <div class="nav-right" id="navDate"></div>
 </nav>
@@ -795,7 +794,9 @@ a.lnk { color: var(--blue); text-decoration: underline; cursor: pointer; }
         <option value="received">入荷済み</option>
       </select>
       <div class="spacer"></div>
-      <button class="btn btn-ghost btn-sm" onclick="triggerPoFileInput()">📂 発注CSVを取込</button>
+      <button class="btn btn-ghost" onclick="exportOrdersCsv()">📥 CSV出力</button>
+      <button class="btn btn-ghost" onclick="openOrderCsvModal()">📂 CSVで一括追加</button>
+      <button class="btn btn-primary" onclick="openOrderModal()">＋ 発注を追加</button>
     </div>
     <div class="tbl-wrap">
       <table>
@@ -826,33 +827,6 @@ a.lnk { color: var(--blue); text-decoration: underline; cursor: pointer; }
   <div class="card">
     <div class="card-head"><div class="card-head-title">📅 納期タイムライン（今後90日）</div></div>
     <div class="card-body" id="timelineArea" style="overflow-x:auto;"></div>
-  </div>
-
-  <!-- 注文残リスト -->
-  <div class="card">
-    <div class="card-head">
-      <div class="card-head-title">📋 注文残リスト</div>
-      <div class="card-head-sub" id="orKpiText" style="color:var(--muted);font-size:12px"></div>
-    </div>
-    <div class="tbl-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th>品番</th>
-            <th>発注日</th>
-            <th>工場名</th>
-            <th>商品名</th>
-            <th class="text-right">注文残</th>
-          </tr>
-        </thead>
-        <tbody id="orTableBody"></tbody>
-      </table>
-      <div id="orEmpty" class="empty" style="display:none">
-        <div class="empty-icon">📋</div>
-        <div class="empty-title">注文残データなし</div>
-        <p style="font-size:12px;color:var(--muted);margin-top:4px">発注CSVを取込むと自動で表示されます</p>
-      </div>
-    </div>
   </div>
 </div>
 </div>
@@ -953,6 +927,67 @@ a.lnk { color: var(--blue); text-decoration: underline; cursor: pointer; }
     <div class="modal-foot">
       <button class="btn btn-ghost" onclick="closeModal('orderModal')">キャンセル</button>
       <button class="btn btn-primary" onclick="saveOrder()">💾 登録する</button>
+    </div>
+  </div>
+</div>
+
+<!-- Order CSV Import Modal -->
+<div class="overlay" id="orderCsvModal">
+  <div class="modal" style="max-width:700px">
+    <div class="modal-head">
+      <div class="modal-title">📂 発注CSVを一括追加</div>
+      <button class="modal-close" onclick="closeModal('orderCsvModal')">×</button>
+    </div>
+    <div class="modal-body">
+      <!-- フォーマット説明 -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
+        <div>
+          <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.8px;margin-bottom:6px;">CSVの列順（1行目はヘッダー行）</div>
+          <div style="background:var(--ink);color:#a8ff78;font-family:'DM Mono',monospace;font-size:11px;padding:10px 12px;border-radius:var(--r-sm);line-height:2.2;">
+            発注日, 工場名, 品番, 商品名,<br>カラー, サイズ, 発注数, 希望納期
+          </div>
+        </div>
+        <div>
+          <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.8px;margin-bottom:6px;">記入例</div>
+          <div style="background:var(--surface2);font-family:'DM Mono',monospace;font-size:11px;padding:10px 12px;border-radius:var(--r-sm);line-height:2.2;border:1px solid var(--rule);">
+            2025/05/10, 達実, PP001, チュールスカート, ピンク, 90, 100, 2025/08/01<br>
+            2025/05/10, 達実, PP001, チュールスカート, ブルー, 100, 80, 2025/08/01
+          </div>
+        </div>
+      </div>
+      <!-- アップロードゾーン -->
+      <div class="upload-zone" id="orderCsvZone" onclick="document.getElementById('orderCsvInput').click()">
+        <div class="upload-icon">📂</div>
+        <div class="upload-title" id="orderCsvZoneLabel">発注CSVをドロップ または クリック</div>
+        <div class="upload-sub">発注日・工場名・品番・商品名・カラー・サイズ・発注数・希望納期</div>
+      </div>
+      <input type="file" id="orderCsvInput" accept=".csv" style="display:none" onchange="handleOrderCsvUpload(event)">
+      <!-- プレビュー -->
+      <div id="orderCsvPreview" style="display:none;margin-top:14px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+          <div style="font-size:12px;font-weight:700;" id="orderCsvPreviewTitle"></div>
+          <button class="btn btn-ghost btn-sm" onclick="cancelOrderCsvUpload()">✕ キャンセル</button>
+        </div>
+        <div class="tbl-wrap" style="max-height:220px;overflow-y:auto;border:1px solid var(--rule);border-radius:var(--r-sm);">
+          <table style="width:100%">
+            <thead><tr style="background:var(--surface2)">
+              <th style="padding:7px 10px;font-size:10px;font-weight:700;color:var(--muted);white-space:nowrap">発注日</th>
+              <th style="padding:7px 10px;font-size:10px;font-weight:700;color:var(--muted);white-space:nowrap">工場名</th>
+              <th style="padding:7px 10px;font-size:10px;font-weight:700;color:var(--muted);white-space:nowrap">品番</th>
+              <th style="padding:7px 10px;font-size:10px;font-weight:700;color:var(--muted);white-space:nowrap">商品名</th>
+              <th style="padding:7px 10px;font-size:10px;font-weight:700;color:var(--muted);white-space:nowrap">カラー</th>
+              <th style="padding:7px 10px;font-size:10px;font-weight:700;color:var(--muted);white-space:nowrap">サイズ</th>
+              <th style="padding:7px 10px;font-size:10px;font-weight:700;color:var(--muted);white-space:nowrap;text-align:right">発注数</th>
+              <th style="padding:7px 10px;font-size:10px;font-weight:700;color:var(--muted);white-space:nowrap">希望納期</th>
+            </tr></thead>
+            <tbody id="orderCsvPreviewBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closeModal('orderCsvModal')">キャンセル</button>
+      <button class="btn btn-primary" id="orderCsvImportBtn" style="display:none" onclick="importOrderCsv()">✅ 追加する</button>
     </div>
   </div>
 </div>
@@ -1192,8 +1227,7 @@ function goPage(id){
   if(id==='products') renderProducts();
   if(id==='reserve')  renderReserves();
   if(id==='transit') renderShipments();
-  if(id==='order'){renderOrders();renderTimeline();renderOrderRemaining();}
-  if(id==='shipinstruct') initSiPage();
+  if(id==='order'){renderOrders();renderTimeline();}
   if(id==='shipinstruct') initSiPage();
 }
 (()=>{
@@ -2024,6 +2058,154 @@ function updateOrderKpi(){
   const thisMonth=new Date();
   document.getElementById('orderKpiDone').textContent=S.orders.filter(o=>o.status==='received'&&new Date(o.deadline).getMonth()===today.getMonth()).length;
 }
+// ════════════════════════════════
+// 発注CSV一括追加
+// ════════════════════════════════
+let _pendingOrderRows = [];
+
+function openOrderCsvModal() {
+  _pendingOrderRows = [];
+  document.getElementById('orderCsvPreview').style.display = 'none';
+  document.getElementById('orderCsvImportBtn').style.display = 'none';
+  document.getElementById('orderCsvZoneLabel').textContent = '発注CSVをドロップ または クリック';
+  document.getElementById('orderCsvInput').value = '';
+  openModal('orderCsvModal');
+}
+
+function handleOrderCsvUpload(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    const text = e.target.result;
+    const rows = parseOrderCsvText_(text);
+    if (!rows || rows.length === 0) {
+      toast('CSVを正しく読み取れませんでした。フォーマットを確認してください。', 'error');
+      return;
+    }
+    _pendingOrderRows = rows;
+    // プレビュー表示
+    const tbody = document.getElementById('orderCsvPreviewBody');
+    tbody.innerHTML = rows.slice(0, 100).map(r => `<tr>
+      <td style="padding:6px 10px;border-bottom:1px solid var(--rule);font-family:'DM Mono',monospace;font-size:11px">${r.orderDate||'—'}</td>
+      <td style="padding:6px 10px;border-bottom:1px solid var(--rule);font-weight:600">${r.factory||'—'}</td>
+      <td style="padding:6px 10px;border-bottom:1px solid var(--rule);font-family:'DM Mono',monospace;font-size:11px">${r.sku||'—'}</td>
+      <td style="padding:6px 10px;border-bottom:1px solid var(--rule);font-weight:600;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.name||'—'}</td>
+      <td style="padding:6px 10px;border-bottom:1px solid var(--rule)">${r.color||'—'}</td>
+      <td style="padding:6px 10px;border-bottom:1px solid var(--rule)">${r.size||'—'}</td>
+      <td style="padding:6px 10px;border-bottom:1px solid var(--rule);text-align:right;font-family:'DM Mono',monospace;font-weight:700;color:var(--blue)">${r.qty.toLocaleString()}</td>
+      <td style="padding:6px 10px;border-bottom:1px solid var(--rule);font-family:'DM Mono',monospace;font-size:11px">${r.deadline||'—'}</td>
+    </tr>`).join('') + (rows.length > 100 ? `<tr><td colspan="8" style="padding:8px;text-align:center;color:var(--muted);font-size:11px">…他 ${rows.length-100} 行</td></tr>` : '');
+    document.getElementById('orderCsvPreview').style.display = '';
+    document.getElementById('orderCsvPreviewTitle').textContent = `プレビュー: ${rows.length} 行`;
+    document.getElementById('orderCsvImportBtn').style.display = '';
+    document.getElementById('orderCsvZoneLabel').textContent = `✅ ${file.name}（${rows.length}行）`;
+  };
+  reader.readAsText(file, 'UTF-8');
+  event.target.value = '';
+}
+
+function parseOrderCsvText_(text) {
+  text = text.replace(/^\uFEFF/, '');
+  const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  if (lines.length < 2) return [];
+  const splitLine = line => {
+    const r = []; let cur = '', inQ = false;
+    for (const c of line) {
+      if (c === '"') { inQ = !inQ; }
+      else if (c === ',' && !inQ) { r.push(cur.trim()); cur = ''; }
+      else cur += c;
+    }
+    r.push(cur.trim());
+    return r.map(v => v.replace(/^"|"$/g, '').replace(/""/g, '"').trim());
+  };
+  const result = [];
+  for (let i = 1; i < lines.length; i++) {
+    const cols = splitLine(lines[i]);
+    if (cols.length < 5) continue;
+    const orderDate = cols[0] || '';
+    const factory   = cols[1] || '';
+    const sku       = cols[2] || '';
+    const name      = cols[3] || '';
+    const color     = cols[4] || '';
+    const size      = cols[5] || '';
+    const qty       = parseInt(cols[6], 10) || 0;
+    const deadline  = cols[7] || '';
+    if (!name && !sku) continue;
+    result.push({ orderDate, factory, sku, name, color, size, qty, deadline,
+      variant: [color, size].filter(Boolean).join('/'),
+      status: 'ordered' });
+  }
+  return result;
+}
+
+function cancelOrderCsvUpload() {
+  _pendingOrderRows = [];
+  document.getElementById('orderCsvPreview').style.display = 'none';
+  document.getElementById('orderCsvImportBtn').style.display = 'none';
+  document.getElementById('orderCsvZoneLabel').textContent = '発注CSVをドロップ または クリック';
+}
+
+function importOrderCsv() {
+  if (!_pendingOrderRows || _pendingOrderRows.length === 0) {
+    toast('追加するデータがありません', 'warn'); return;
+  }
+  const newRows = _pendingOrderRows.map(r => ({ ...r, id: nextOid++ }));
+  S.orders = [...newRows, ...S.orders];
+  save();
+  closeModal('orderCsvModal');
+  renderOrders();
+  renderTimeline();
+  updateOrderKpi();
+  toast(`✅ ${newRows.length}件の発注を追加しました`, 'success');
+  // GAS経由でクラウドに保存
+  if (GAS_ENABLED && GAS_URL) {
+    pushOrdersToCloud_(newRows);
+  } else {
+    toast('⚠️ クラウド未設定のため、このブラウザのみ更新されました。', 'warn');
+  }
+}
+
+async function pushOrdersToCloud_(rows) {
+  try {
+    const gasRows = rows.map(r => ({
+      '発注日':   r.orderDate || '',
+      '工場名':   r.factory   || '',
+      '品番':     r.sku       || '',
+      '商品名':   r.name      || '',
+      'カラー':   r.color     || '',
+      'サイズ':   r.size      || '',
+      '発注数':   r.qty       || 0,
+      '希望納期': r.deadline  || '',
+    }));
+    const res = await fetch(GAS_URL, {
+      method: 'POST',
+      body: JSON.stringify({ action: 'savePurchaseOrders', rows: gasRows })
+    });
+    const j = await res.json();
+    if (!j.ok) throw new Error(j.error);
+    toast(`☁️ クラウドに保存しました — スタッフ全員が同期で確認できます`, 'success');
+  } catch(e) {
+    toast('⚠️ クラウド保存失敗（ローカルには保存済み）: ' + e.message, 'error');
+  }
+}
+
+// ── 発注データCSV出力 ──
+function exportOrdersCsv() {
+  if (!S.orders || S.orders.length === 0) { toast('発注データがありません', 'warn'); return; }
+  const escape = v => { const s = String(v ?? ''); return s.includes(',') || s.includes('"') ? `"${s.replace(/"/g, '""')}"` : s; };
+  const headers = ['発注日','工場名','品番','商品名','カラー','サイズ','発注数','希望納期','ステータス'];
+  const rows = S.orders.map(o => [
+    o.orderDate||'', o.factory||'', o.sku||'', o.name||'',
+    o.color||'', o.size||'', o.qty||0, o.deadline||'', o.status||''
+  ].map(escape).join(','));
+  const csv = '\uFEFF' + headers.join(',') + '\n' + rows.join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const now = new Date().toLocaleDateString('ja-JP',{year:'numeric',month:'2-digit',day:'2-digit'}).replace(/\//g,'-');
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `発注一覧_${now}.csv`; a.click();
+  toast(`📥 ${S.orders.length}件をCSV出力しました`, 'success');
+}
+
 function renderOrders(){
   const search=document.getElementById('orderSearch').value.toLowerCase();
   const stF=document.getElementById('orderStatusFilter').value;
@@ -2471,7 +2653,6 @@ function renderProducts() {
         <div onclick="setShipFilter('nonzero')" id="sf_nonzero" style="padding:7px 14px;cursor:pointer;font-size:11px;font-weight:600;white-space:nowrap">　1以上のみ</div>
       </div>
     </th>
-    <th style="${thBase}text-align:right;background:#f0f4ff;white-space:nowrap">📋 注文残</th>
   `;
 
   // Build rows
@@ -2487,8 +2668,6 @@ function renderProducts() {
     const priceStr = (!isNaN(priceNum) && priceNum > 0) ? '¥' + priceNum.toLocaleString() : '—';
     const shipKey = p.itemNo || '';
     const shipQty = shipmentMap[shipKey] || 0;
-    const orMap   = {}; (S.orderRemaining||[]).forEach(r => { orMap[r.itemNo] = r.totalQty; });
-    const orQty   = orMap[shipKey] || 0;
     return `<tr>
       <td style="padding:10px 12px;border-bottom:1px solid var(--rule);font-family:'DM Mono',monospace;font-size:11px;font-weight:600;white-space:nowrap">${p.itemNo||'—'}</td>
       <td class="col-jan${janVisible?'':' jan-hidden'}" style="padding:10px 12px;border-bottom:1px solid var(--rule);font-family:'DM Mono',monospace;font-size:11px;color:var(--muted);white-space:nowrap">${p.jan||'—'}</td>
@@ -2499,7 +2678,6 @@ function renderProducts() {
       ${chCells}
       <td style="padding:10px 12px;border-bottom:1px solid var(--rule);text-align:right;font-family:'DM Mono',monospace;font-weight:700;font-size:14px" class="${totalCls}">${total}</td>
       <td style="padding:10px 12px;border-bottom:1px solid var(--rule);text-align:right;font-family:'DM Mono',monospace;font-weight:700;background:#fff8e6;color:${shipQty>0?'var(--amber)':'var(--muted)'}">${shipQty > 0 ? shipQty.toLocaleString() : '—'}</td>
-      <td style="padding:10px 12px;border-bottom:1px solid var(--rule);text-align:right;font-family:'DM Mono',monospace;font-weight:700;background:#f0f4ff;color:${orQty>0?'var(--blue)':'var(--muted)'}">${orQty > 0 ? orQty.toLocaleString() : '—'}</td>
     </tr>`;
   }).join('');
 
@@ -3697,10 +3875,8 @@ async function loadFromCloud(force) {
     const metaData     = d.meta     || [];
     const transitData  = d.transit  || [];
     const ordersData   = d.orders   || [];
-    if (d.reserves)        S.reserves        = d.reserves;
-    if (d.shipments)       S.shipments       = d.shipments;
-    if (d.orderRemaining)  S.orderRemaining  = d.orderRemaining;
-    if (d.purchaseOrders)  S.purchaseOrders  = d.purchaseOrders;
+    if (d.reserves)  S.reserves  = d.reserves;
+    if (d.shipments) S.shipments = d.shipments;
 
     console.log('[Cloud] 取得件数:', allProducts.length, '/ total:', d.total);
     if (allProducts.length > 0) {
@@ -3725,9 +3901,8 @@ async function loadFromCloud(force) {
     if(typeof renderReserves  === 'function') renderReserves();
     if(typeof renderShipments === 'function') renderShipments();
     if(typeof renderTransit   === 'function') renderTransit();
-    if(typeof renderOrders          === 'function') renderOrders();
-    if(typeof renderTimeline        === 'function') renderTimeline();
-    if(typeof renderOrderRemaining  === 'function') renderOrderRemaining();
+    if(typeof renderOrders    === 'function') renderOrders();
+    if(typeof renderTimeline  === 'function') renderTimeline();
 
     const now = new Date().toLocaleTimeString('ja-JP');
     const seEl = document.getElementById('syncStatus'); if(seEl) seEl.title = '最終同期: ' + now;
@@ -3858,9 +4033,9 @@ window.addEventListener('load', function() {
   renderOrders();
   renderTimeline();
   updateOrderKpi();
-  renderOrderRemaining();
   setupDropZone('smDropZone', 'smCsvFileInput', handleSmaregiCsv);
   setupDropZone('extDropZone', 'extCsvFileInput', handleExtCsv);
+  setupDropZone('orderCsvZone', 'orderCsvInput', handleOrderCsvUpload);
   if (GAS_ENABLED) {
     updateSyncStatus('connected');
   }
@@ -4214,201 +4389,6 @@ function printSiSheet() {
 function initSiPage() {
   setupDropZone('siStockZone', 'siStockInput', handleSiStockCsv);
   setupDropZone('siSalesZone', 'siSalesInput', handleSiSalesCsv);
-}
-
-// ════════════════════════════════
-// 発注CSV取込
-// ════════════════════════════════
-let _poPreviewRows = [];
-
-function triggerPoFileInput() {
-  const old = document.getElementById('poFileInput');
-  if (old) old.remove();
-  const input = document.createElement('input');
-  input.type = 'file';
-  input.id = 'poFileInput';
-  input.accept = '.csv';
-  input.style.cssText = 'position:fixed;top:-9999px;left:-9999px;opacity:0';
-  input.addEventListener('change', handlePoCsv);
-  document.body.appendChild(input);
-  input.click();
-}
-
-function handlePoCsv(e) {
-  const file = e.target.files[0]; if (!file) return;
-  readFileAutoEncoding(file, text => {
-    const { headers, rows } = parseCSV(text);
-    const required = ['発注日','工場名','品番','商品名','発注数'];
-    const missing = required.filter(h => !headers.map(x=>x.trim()).includes(h));
-    if (missing.length > 0) {
-      toast(`❌ 必須列が見つかりません: ${missing.join(', ')}`, 'error'); return;
-    }
-    const poRows = rows.map(row => {
-      const obj = {};
-      headers.forEach((h,i) => { obj[h.trim()] = (row[i]||'').trim(); });
-      return obj;
-    }).filter(r => r['品番'] && Number(r['発注数']) > 0);
-    if (poRows.length === 0) {
-      toast('❌ 有効な発注データがありません', 'error'); return;
-    }
-    _poPreviewRows = poRows;
-    showPoPreview(poRows, file.name);
-  });
-}
-
-function showPoPreview(rows, fileName) {
-  const total     = rows.reduce((s,r) => s + Number(r['発注数']||0), 0);
-  const factories = [...new Set(rows.map(r=>r['工場名']).filter(Boolean))].join('・');
-  const html = `
-    <div style="margin-bottom:16px">
-      <div style="font-size:13px;font-weight:700;margin-bottom:12px">📂 ${fileName}</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:16px">
-        <div style="background:var(--surface2);border-radius:var(--r-sm);padding:10px 14px">
-          <div style="font-size:10px;color:var(--muted);font-weight:700">SKU数</div>
-          <div style="font-size:20px;font-weight:700;font-family:'DM Mono',monospace">${rows.length}</div>
-        </div>
-        <div style="background:var(--surface2);border-radius:var(--r-sm);padding:10px 14px">
-          <div style="font-size:10px;color:var(--muted);font-weight:700">合計発注数</div>
-          <div style="font-size:20px;font-weight:700;font-family:'DM Mono',monospace">${total.toLocaleString()}</div>
-        </div>
-        <div style="background:var(--surface2);border-radius:var(--r-sm);padding:10px 14px">
-          <div style="font-size:10px;color:var(--muted);font-weight:700">工場</div>
-          <div style="font-size:13px;font-weight:700">${factories||'—'}</div>
-        </div>
-      </div>
-      <div style="max-height:240px;overflow-y:auto;border:1px solid var(--rule);border-radius:var(--r-sm)">
-        <table style="width:100%;font-size:11px;border-collapse:collapse">
-          <thead><tr style="background:var(--surface2);position:sticky;top:0">
-            <th style="padding:6px 10px;text-align:left">品番</th>
-            <th style="padding:6px 10px;text-align:left">商品名</th>
-            <th style="padding:6px 10px;text-align:left">カラー</th>
-            <th style="padding:6px 10px;text-align:left">サイズ</th>
-            <th style="padding:6px 10px;text-align:right">発注数</th>
-            <th style="padding:6px 10px;text-align:left">希望納期</th>
-          </tr></thead>
-          <tbody>${rows.map((r,i)=>`<tr style="background:${i%2===0?'white':'var(--surface2)'}">
-            <td style="padding:5px 10px;font-family:'DM Mono',monospace;font-weight:700">${r['品番']}</td>
-            <td style="padding:5px 10px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r['商品名']||'—'}</td>
-            <td style="padding:5px 10px">${r['カラー']||'—'}</td>
-            <td style="padding:5px 10px">${r['サイズ']||'—'}</td>
-            <td style="padding:5px 10px;text-align:right;font-weight:700">${Number(r['発注数']).toLocaleString()}</td>
-            <td style="padding:5px 10px;color:var(--blue)">${r['希望納期']||'—'}</td>
-          </tr>`).join('')}</tbody>
-        </table>
-      </div>
-    </div>
-    <div style="display:flex;gap:10px;justify-content:flex-end">
-      <button class="btn btn-ghost" onclick="closeModal('poPreviewModal')">キャンセル</button>
-      <button class="btn btn-primary" onclick="savePoCsv()">✅ この内容で登録する</button>
-    </div>`;
-  let modal = document.getElementById('poPreviewModal');
-  if (!modal) {
-    modal = document.createElement('div');
-    modal.id = 'poPreviewModal';
-    modal.className = 'overlay';
-    modal.innerHTML = `<div class="modal" style="max-width:640px">
-      <div class="modal-head">
-        <div class="modal-title">📂 発注CSV確認</div>
-        <button class="modal-close" onclick="closeModal('poPreviewModal')">×</button>
-      </div>
-      <div class="modal-body" id="poPreviewBody"></div>
-    </div>`;
-    document.body.appendChild(modal);
-  }
-  document.getElementById('poPreviewBody').innerHTML = html;
-  modal.classList.add('active');
-}
-
-async function savePoCsv() {
-  const rows = _poPreviewRows;
-  closeModal('poPreviewModal');
-  if (!GAS_URL) { toast('❌ GAS URLが設定されていません', 'error'); return; }
-  toast('⏳ 発注データを保存中...', 'info');
-  try {
-    const res = await fetch(GAS_URL, {
-      method: 'POST',
-      body: JSON.stringify({ action: 'savePurchaseOrders', rows }),
-    });
-    const json = await res.json();
-    if (json.ok) {
-      if (!S.purchaseOrders) S.purchaseOrders = [];
-      rows.forEach(r => S.purchaseOrders.push(r));
-      rebuildOrderRemaining();
-      renderOrderRemaining();
-      toast(`✅ ${rows.length}件の発注データを登録しました`, 'success');
-      loadFromCloud();
-    } else {
-      toast('❌ 保存エラー: ' + (json.error||'不明'), 'error');
-    }
-  } catch(e) {
-    toast('❌ 通信エラー: ' + e.message, 'error');
-  }
-}
-
-// 発注データ + 出荷データから注文残をローカルで再計算
-function rebuildOrderRemaining() {
-  const shippedMap = {};
-  (S.shipments||[]).forEach(s => {
-    if (!s.itemNo) return;
-    shippedMap[s.itemNo] = (shippedMap[s.itemNo]||0) + (Number(s.qty)||0);
-  });
-  const poMap = {};
-  (S.purchaseOrders||[]).forEach(po => {
-    const itemNo = String(po['品番']||'').trim();
-    if (!itemNo) return;
-    const orderQty = Number(po['発注数']||0);
-    if (!poMap[itemNo]) poMap[itemNo] = { qty:0, rows:[] };
-    poMap[itemNo].qty += orderQty;
-    poMap[itemNo].rows.push({
-      orderNo: String(po['発注日']||''),
-      factory: String(po['工場名']||''),
-      name:    String(po['商品名']||''),
-      color:   String(po['カラー']||''),
-      size:    String(po['サイズ']||''),
-      orderQty,
-      dueDate: String(po['希望納期']||''),
-    });
-  });
-  S.orderRemaining = [];
-  Object.entries(poMap).forEach(([itemNo, data]) => {
-    const shipped   = shippedMap[itemNo]||0;
-    const remaining = Math.max(0, data.qty - shipped);
-    if (remaining === 0) return;
-    S.orderRemaining.push({ itemNo, totalQty: remaining, detail: data.rows });
-  });
-}
-
-// 注文残リスト描画
-function renderOrderRemaining() {
-  const tbody = document.getElementById('orTableBody');
-  const empty = document.getElementById('orEmpty');
-  const kpiEl = document.getElementById('orKpiText');
-  if (!tbody) return;
-  const data = S.orderRemaining || [];
-  const rows = [];
-  data.forEach(r => {
-    (r.detail||[]).forEach(d => {
-      rows.push({ itemNo:r.itemNo, orderNo:d.orderNo, factory:d.factory, name:d.name, qty:d.qty });
-    });
-  });
-  if (rows.length === 0) {
-    tbody.innerHTML = '';
-    if (empty) empty.style.display = 'flex';
-    if (kpiEl) kpiEl.textContent = '';
-    return;
-  }
-  if (empty) empty.style.display = 'none';
-  const totalQty   = rows.reduce((s,r) => s+r.qty, 0);
-  const totalItems = data.length;
-  if (kpiEl) kpiEl.textContent = `${totalItems} 品番 / 合計 ${totalQty.toLocaleString()} 点`;
-  tbody.innerHTML = rows.map(r => `
-    <tr>
-      <td class="mono" style="font-size:12px;font-weight:700">${r.itemNo}</td>
-      <td style="font-size:12px;color:var(--muted)">${r.orderNo}</td>
-      <td style="font-size:12px">${r.factory}</td>
-      <td style="font-size:12px;max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${r.name}">${r.name}</td>
-      <td class="text-right mono" style="font-weight:700;color:var(--blue)">${r.qty.toLocaleString()}</td>
-    </tr>`).join('');
 }
 
 // ドラッグ&ドロップ対応
