@@ -797,7 +797,8 @@ a.lnk { color: var(--blue); text-decoration: underline; cursor: pointer; }
         <option value="received">入荷済み</option>
       </select>
       <div class="spacer"></div>
-      <button class="btn btn-primary" onclick="openOrderModal()">＋ 発注を追加</button>
+      <button class="btn btn-ghost btn-sm" onclick="document.getElementById('poFileInput').click()">📂 発注CSVを取込</button>
+      <input type="file" id="poFileInput" accept=".csv" style="display:none" onchange="handlePoCsv(event)">
     </div>
     <div class="tbl-wrap">
       <table>
@@ -2025,6 +2026,132 @@ function updateOrderKpi(){
   const thisMonth=new Date();
   document.getElementById('orderKpiDone').textContent=S.orders.filter(o=>o.status==='received'&&new Date(o.deadline).getMonth()===today.getMonth()).length;
 }
+// ════════════════════════════════
+// 発注CSV取込
+// ════════════════════════════════
+let _poPreviewRows = [];
+
+function handlePoCsv(e) {
+  const file = e.target.files[0]; if (!file) return;
+  e.target.value = '';
+
+  readFileAutoEncoding(file, text => {
+    const { headers, rows } = parseCSV(text);
+    const required = ['発注日','工場名','品番','商品名','発注数'];
+    const missing = required.filter(h => !headers.map(h=>h.trim()).includes(h));
+    if (missing.length > 0) {
+      toast(`❌ 必須列が見つかりません: ${missing.join(', ')}`, 'error');
+      return;
+    }
+
+    const poRows = rows.map(row => {
+      const obj = {};
+      headers.forEach((h, i) => { obj[h.trim()] = (row[i] || '').trim(); });
+      return obj;
+    }).filter(r => r['品番'] && Number(r['発注数']) > 0);
+
+    if (poRows.length === 0) {
+      toast('❌ 有効な発注データがありません', 'error');
+      return;
+    }
+
+    _poPreviewRows = poRows;
+    showPoPreview(poRows, file.name);
+  });
+}
+
+function showPoPreview(rows, fileName) {
+  const total = rows.reduce((s, r) => s + Number(r['発注数'] || 0), 0);
+  const factories = [...new Set(rows.map(r => r['工場名']).filter(Boolean))].join('・');
+
+  const html = `
+    <div style="margin-bottom:16px">
+      <div style="font-size:13px;font-weight:700;margin-bottom:8px">📂 ${fileName}</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:16px">
+        <div style="background:var(--surface2);border-radius:var(--r-sm);padding:10px 14px">
+          <div style="font-size:10px;color:var(--muted);font-weight:700">SKU数</div>
+          <div style="font-size:20px;font-weight:700;font-family:'DM Mono',monospace">${rows.length}</div>
+        </div>
+        <div style="background:var(--surface2);border-radius:var(--r-sm);padding:10px 14px">
+          <div style="font-size:10px;color:var(--muted);font-weight:700">合計発注数</div>
+          <div style="font-size:20px;font-weight:700;font-family:'DM Mono',monospace">${total.toLocaleString()}</div>
+        </div>
+        <div style="background:var(--surface2);border-radius:var(--r-sm);padding:10px 14px">
+          <div style="font-size:10px;color:var(--muted);font-weight:700">工場</div>
+          <div style="font-size:13px;font-weight:700">${factories || '—'}</div>
+        </div>
+      </div>
+      <div style="max-height:240px;overflow-y:auto;border:1px solid var(--rule);border-radius:var(--r-sm)">
+        <table style="width:100%;font-size:11px;border-collapse:collapse">
+          <thead>
+            <tr style="background:var(--surface2);position:sticky;top:0">
+              <th style="padding:6px 10px;text-align:left;font-weight:700">品番</th>
+              <th style="padding:6px 10px;text-align:left;font-weight:700">商品名</th>
+              <th style="padding:6px 10px;text-align:left;font-weight:700">カラー</th>
+              <th style="padding:6px 10px;text-align:left;font-weight:700">サイズ</th>
+              <th style="padding:6px 10px;text-align:right;font-weight:700">発注数</th>
+              <th style="padding:6px 10px;text-align:left;font-weight:700">希望納期</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows.map((r,i) => `<tr style="background:${i%2===0?'white':'var(--surface2)'}">
+              <td style="padding:5px 10px;font-family:'DM Mono',monospace;font-weight:700">${r['品番']}</td>
+              <td style="padding:5px 10px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r['商品名']||'—'}</td>
+              <td style="padding:5px 10px">${r['カラー']||'—'}</td>
+              <td style="padding:5px 10px">${r['サイズ']||'—'}</td>
+              <td style="padding:5px 10px;text-align:right;font-family:'DM Mono',monospace;font-weight:700">${Number(r['発注数']).toLocaleString()}</td>
+              <td style="padding:5px 10px;color:var(--blue)">${r['希望納期']||'—'}</td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div style="display:flex;gap:10px;justify-content:flex-end">
+      <button class="btn btn-ghost" onclick="closeModal('poPreviewModal')">キャンセル</button>
+      <button class="btn btn-primary" onclick="savePoCsv()">✅ この内容で登録する</button>
+    </div>`;
+
+  // モーダルを動的に作成
+  let modal = document.getElementById('poPreviewModal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'poPreviewModal';
+    modal.className = 'overlay';
+    modal.innerHTML = `<div class="modal" style="max-width:640px">
+      <div class="modal-head">
+        <div class="modal-title">📂 発注CSV確認</div>
+        <button class="modal-close" onclick="closeModal('poPreviewModal')">×</button>
+      </div>
+      <div class="modal-body" id="poPreviewBody"></div>
+    </div>`;
+    document.body.appendChild(modal);
+  }
+  document.getElementById('poPreviewBody').innerHTML = html;
+  modal.classList.add('active');
+}
+
+async function savePoCsv() {
+  const rows = _poPreviewRows;
+  closeModal('poPreviewModal');
+  if (!GAS_URL) { toast('❌ GAS URLが設定されていません', 'error'); return; }
+  toast('⏳ 発注データを保存中...', 'info');
+  try {
+    const res = await fetch(GAS_URL, {
+      method: 'POST',
+      body: JSON.stringify({ action: 'savePurchaseOrders', rows }),
+    });
+    const json = await res.json();
+    if (json.ok) {
+      toast(`✅ ${rows.length}件の発注データを登録しました`, 'success');
+      loadFromCloud();
+    } else {
+      toast('❌ 保存エラー: ' + json.error, 'error');
+    }
+  } catch(e) {
+    toast('❌ 通信エラー: ' + e.message, 'error');
+  }
+}
+
 // 注文残リスト描画
 function renderOrderRemaining() {
   const tbody  = document.getElementById('orTableBody');
@@ -3747,6 +3874,7 @@ async function loadFromCloud(force) {
     if (d.reserves)        S.reserves        = d.reserves;
     if (d.shipments)       S.shipments       = d.shipments;
     if (d.orderRemaining)  S.orderRemaining  = d.orderRemaining;
+    if (d.purchaseOrders)  S.purchaseOrders  = d.purchaseOrders;
 
     console.log('[Cloud] 取得件数:', allProducts.length, '/ total:', d.total);
     if (allProducts.length > 0) {
