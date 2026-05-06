@@ -798,7 +798,6 @@ a.lnk { color: var(--blue); text-decoration: underline; cursor: pointer; }
       </select>
       <div class="spacer"></div>
       <button class="btn btn-ghost btn-sm" onclick="triggerPoFileInput()">📂 発注CSVを取込</button>
-      <input type="file" id="poFileInput" accept=".csv" style="position:absolute;left:-9999px;opacity:0;width:1px;height:1px" onchange="handlePoCsv(event)">
     </div>
     <div class="tbl-wrap">
       <table>
@@ -2032,8 +2031,18 @@ function updateOrderKpi(){
 let _poPreviewRows = [];
 
 function triggerPoFileInput() {
-  const input = document.getElementById('poFileInput');
-  if (input) input.click();
+  // 既存があれば削除
+  const old = document.getElementById('poFileInput');
+  if (old) old.remove();
+  // 毎回新規作成してbodyに追加
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.id = 'poFileInput';
+  input.accept = '.csv';
+  input.style.cssText = 'position:fixed;top:-9999px;left:-9999px;opacity:0';
+  input.addEventListener('change', handlePoCsv);
+  document.body.appendChild(input);
+  input.click();
 }
 
 function handlePoCsv(e) {
