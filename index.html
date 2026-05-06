@@ -829,6 +829,33 @@ a.lnk { color: var(--blue); text-decoration: underline; cursor: pointer; }
     <div class="card-head"><div class="card-head-title">📅 納期タイムライン（今後90日）</div></div>
     <div class="card-body" id="timelineArea" style="overflow-x:auto;"></div>
   </div>
+
+  <!-- 注文残リスト -->
+  <div class="card">
+    <div class="card-head">
+      <div class="card-head-title">📋 注文残リスト</div>
+      <div class="card-head-sub" id="orKpiText" style="color:var(--muted);font-size:12px"></div>
+    </div>
+    <div class="tbl-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>品番</th>
+            <th>注文番号</th>
+            <th>工場名</th>
+            <th>商品名</th>
+            <th class="text-right">注文残</th>
+          </tr>
+        </thead>
+        <tbody id="orTableBody"></tbody>
+      </table>
+      <div id="orEmpty" class="empty" style="display:none">
+        <div class="empty-icon">📋</div>
+        <div class="empty-title">注文残データなし</div>
+        <p style="font-size:12px;color:var(--muted);margin-top:4px">Google DriveのFOLDER_ORDER_REMAININGフォルダにxlsxをアップロードしてください</p>
+      </div>
+    </div>
+  </div>
 </div>
 </div>
 
@@ -1167,7 +1194,7 @@ function goPage(id){
   if(id==='products') renderProducts();
   if(id==='reserve')  renderReserves();
   if(id==='transit') renderShipments();
-  if(id==='order'){renderOrders();renderTimeline();}
+  if(id==='order'){renderOrders();renderTimeline();renderOrderRemaining();}
   if(id==='shipinstruct') initSiPage();
 }
 (()=>{
@@ -1998,6 +2025,51 @@ function updateOrderKpi(){
   const thisMonth=new Date();
   document.getElementById('orderKpiDone').textContent=S.orders.filter(o=>o.status==='received'&&new Date(o.deadline).getMonth()===today.getMonth()).length;
 }
+// 注文残リスト描画
+function renderOrderRemaining() {
+  const tbody  = document.getElementById('orTableBody');
+  const empty  = document.getElementById('orEmpty');
+  const kpiEl  = document.getElementById('orKpiText');
+  if (!tbody) return;
+
+  const data = S.orderRemaining || [];
+
+  // 品番ごとにflattenして行に展開
+  const rows = [];
+  data.forEach(r => {
+    (r.detail || []).forEach(d => {
+      rows.push({
+        itemNo:  r.itemNo,
+        orderNo: d.orderNo,
+        factory: d.factory,
+        name:    d.name,
+        qty:     d.qty,
+      });
+    });
+  });
+
+  if (rows.length === 0) {
+    tbody.innerHTML = '';
+    if (empty) empty.style.display = 'flex';
+    if (kpiEl) kpiEl.textContent = '';
+    return;
+  }
+  if (empty) empty.style.display = 'none';
+
+  const totalQty   = rows.reduce((s, r) => s + r.qty, 0);
+  const totalItems = data.length;
+  if (kpiEl) kpiEl.textContent = `${totalItems} 品番 / 合計 ${totalQty.toLocaleString()} 点`;
+
+  tbody.innerHTML = rows.map(r => `
+    <tr>
+      <td class="mono" style="font-size:12px;font-weight:700">${r.itemNo}</td>
+      <td style="font-size:12px;color:var(--muted)">${r.orderNo}</td>
+      <td style="font-size:12px">${r.factory}</td>
+      <td style="font-size:12px;max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${r.name}">${r.name}</td>
+      <td class="text-right mono" style="font-weight:700;color:var(--blue)">${r.qty.toLocaleString()}</td>
+    </tr>`).join('');
+}
+
 function renderOrders(){
   const search=document.getElementById('orderSearch').value.toLowerCase();
   const stF=document.getElementById('orderStatusFilter').value;
@@ -2445,6 +2517,7 @@ function renderProducts() {
         <div onclick="setShipFilter('nonzero')" id="sf_nonzero" style="padding:7px 14px;cursor:pointer;font-size:11px;font-weight:600;white-space:nowrap">　1以上のみ</div>
       </div>
     </th>
+    <th style="${thBase}text-align:right;background:#f0f4ff;white-space:nowrap">📋 注文残</th>
   `;
 
   // Build rows
@@ -2458,8 +2531,11 @@ function renderProducts() {
     const totalCls = total === 0 ? 'sc-out' : total <= 10 ? 'sc-low' : 'sc-ok';
     const priceNum = Number(p.price);
     const priceStr = (!isNaN(priceNum) && priceNum > 0) ? '¥' + priceNum.toLocaleString() : '—';
-    const shipKey = p.itemNo || '';
-    const shipQty = shipmentMap[shipKey] || 0;
+    const shipKey  = p.itemNo || '';
+    const shipQty  = shipmentMap[shipKey] || 0;
+    const orMap    = {};
+    (S.orderRemaining || []).forEach(r => { orMap[r.itemNo] = r.totalQty; });
+    const orQty    = orMap[shipKey] || 0;
     return `<tr>
       <td style="padding:10px 12px;border-bottom:1px solid var(--rule);font-family:'DM Mono',monospace;font-size:11px;font-weight:600;white-space:nowrap">${p.itemNo||'—'}</td>
       <td class="col-jan${janVisible?'':' jan-hidden'}" style="padding:10px 12px;border-bottom:1px solid var(--rule);font-family:'DM Mono',monospace;font-size:11px;color:var(--muted);white-space:nowrap">${p.jan||'—'}</td>
@@ -2470,6 +2546,7 @@ function renderProducts() {
       ${chCells}
       <td style="padding:10px 12px;border-bottom:1px solid var(--rule);text-align:right;font-family:'DM Mono',monospace;font-weight:700;font-size:14px" class="${totalCls}">${total}</td>
       <td style="padding:10px 12px;border-bottom:1px solid var(--rule);text-align:right;font-family:'DM Mono',monospace;font-weight:700;background:#fff8e6;color:${shipQty>0?'var(--amber)':'var(--muted)'}">${shipQty > 0 ? shipQty.toLocaleString() : '—'}</td>
+      <td style="padding:10px 12px;border-bottom:1px solid var(--rule);text-align:right;font-family:'DM Mono',monospace;font-weight:700;background:#f0f4ff;color:${orQty>0?'var(--blue)':'var(--muted)'}">${orQty > 0 ? orQty.toLocaleString() : '—'}</td>
     </tr>`;
   }).join('');
 
@@ -3667,8 +3744,9 @@ async function loadFromCloud(force) {
     const metaData     = d.meta     || [];
     const transitData  = d.transit  || [];
     const ordersData   = d.orders   || [];
-    if (d.reserves)  S.reserves  = d.reserves;
-    if (d.shipments) S.shipments = d.shipments;
+    if (d.reserves)        S.reserves        = d.reserves;
+    if (d.shipments)       S.shipments       = d.shipments;
+    if (d.orderRemaining)  S.orderRemaining  = d.orderRemaining;
 
     console.log('[Cloud] 取得件数:', allProducts.length, '/ total:', d.total);
     if (allProducts.length > 0) {
@@ -3693,8 +3771,9 @@ async function loadFromCloud(force) {
     if(typeof renderReserves  === 'function') renderReserves();
     if(typeof renderShipments === 'function') renderShipments();
     if(typeof renderTransit   === 'function') renderTransit();
-    if(typeof renderOrders    === 'function') renderOrders();
-    if(typeof renderTimeline  === 'function') renderTimeline();
+    if(typeof renderOrders          === 'function') renderOrders();
+    if(typeof renderTimeline        === 'function') renderTimeline();
+    if(typeof renderOrderRemaining  === 'function') renderOrderRemaining();
 
     const now = new Date().toLocaleTimeString('ja-JP');
     const seEl = document.getElementById('syncStatus'); if(seEl) seEl.title = '最終同期: ' + now;
@@ -4069,11 +4148,9 @@ function renderSiTable() {
       <td class="text-right mono" style="width:70px">${r.available}</td>
       <td class="text-right" style="width:70px">${ownTotalHtml}</td>
       <td class="text-right mono" style="color:var(--ink2);width:70px">${r.sales30 || '—'}</td>
-      <td class="text-right mono" style="color:var(--blue);font-weight:700;width:55px">${r.recommended}</td>
       <td class="text-center" style="width:72px">
         <input type="number" class="si-qty-input${userQty !== '' ? ' changed' : ''}"
           min="0" value="${userQty}"
-          placeholder="${r.recommended}"
           oninput="onSiQtyInput('${key}', this)"
           onchange="onSiQtyInput('${key}', this)">
       </td>
@@ -4318,7 +4395,6 @@ function setupDropZone(zoneId, inputId, handler) {
             <th class="text-right" style="width:64px">販売可能数<br><span style="font-size:9px;font-weight:400;color:var(--muted)">ZOZO</span></th>
             <th class="text-right" style="width:60px" title="倉庫+オンライン+代官山+名古屋+神戸+bazar">自社在庫<br><span style="font-size:9px;font-weight:400;color:var(--muted)">合計</span></th>
             <th class="text-right" style="width:60px" title="直近30日販売数（ZOZO在庫分析X列）">直近30日<br><span style="font-size:9px;font-weight:400;color:var(--muted)">販売数</span></th>
-            <th class="text-right" style="width:50px">推奨<br><span style="font-size:9px;font-weight:400;color:var(--muted)">フォロー</span></th>
             <th style="width:72px" class="text-center">フォロー数<br><span style="font-size:9px;font-weight:400;color:var(--muted)">確定入力</span></th>
             <th style="width:130px">メモ</th>
           </tr>
