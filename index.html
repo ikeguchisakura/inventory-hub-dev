@@ -2037,15 +2037,20 @@ function triggerPoFileInput() {
 }
 
 function handlePoCsv(e) {
-  const file = e.target.files[0]; if (!file) return;
+  const file = e.target.files[0];
+  alert('ファイル取得: ' + (file ? file.name : 'なし'));
+  if (!file) return;
   e.target.value = '';
 
   readFileAutoEncoding(file, text => {
+    alert('読込完了: ' + text.slice(0, 50));
     const { headers, rows } = parseCSV(text);
+    alert('ヘッダー: ' + headers.join(', '));
     const required = ['発注日','工場名','品番','商品名','発注数'];
     const missing = required.filter(h => !headers.map(h=>h.trim()).includes(h));
     if (missing.length > 0) {
       toast(`❌ 必須列が見つかりません: ${missing.join(', ')}`, 'error');
+      alert('必須列なし: ' + missing.join(', '));
       return;
     }
 
