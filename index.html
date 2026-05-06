@@ -853,7 +853,7 @@ a.lnk { color: var(--blue); text-decoration: underline; cursor: pointer; }
       <div id="orEmpty" class="empty" style="display:none">
         <div class="empty-icon">📋</div>
         <div class="empty-title">注文残データなし</div>
-        <p style="font-size:12px;color:var(--muted);margin-top:4px">Google DriveのFOLDER_ORDER_REMAININGフォルダにxlsxをアップロードしてください</p>
+        <p style="font-size:12px;color:var(--muted);margin-top:4px">発注CSVを取込むと自動で表示されます</p>
       </div>
     </div>
   </div>
@@ -2142,14 +2142,56 @@ async function savePoCsv() {
     });
     const json = await res.json();
     if (json.ok) {
+      // ローカルにも即追記して画面を即時反映
+      if (!S.purchaseOrders) S.purchaseOrders = [];
+      rows.forEach(r => S.purchaseOrders.push(r));
+      // 注文残も再計算
+      rebuildOrderRemaining();
+      renderOrderRemaining();
       toast(`✅ ${rows.length}件の発注データを登録しました`, 'success');
+      // バックグラウンドでクラウドとも同期
       loadFromCloud();
     } else {
-      toast('❌ 保存エラー: ' + json.error, 'error');
+      toast('❌ 保存エラー: ' + (json.error || '不明なエラー'), 'error');
     }
   } catch(e) {
     toast('❌ 通信エラー: ' + e.message, 'error');
   }
+}
+
+// 発注データ + 出荷データから注文残をローカルで再計算
+function rebuildOrderRemaining() {
+  const shippedMap = {};
+  (S.shipments || []).forEach(s => {
+    if (!s.itemNo) return;
+    shippedMap[s.itemNo] = (shippedMap[s.itemNo] || 0) + (Number(s.qty) || 0);
+  });
+
+  const poMap = {};
+  (S.purchaseOrders || []).forEach(po => {
+    const itemNo = String(po['品番'] || '').trim();
+    if (!itemNo) return;
+    const orderQty = Number(po['発注数'] || 0);
+    if (!poMap[itemNo]) poMap[itemNo] = { qty: 0, rows: [] };
+    poMap[itemNo].qty += orderQty;
+    poMap[itemNo].rows.push({
+      orderNo:  String(po['発注日']   || ''),
+      factory:  String(po['工場名']   || ''),
+      name:     String(po['商品名']   || ''),
+      color:    String(po['カラー']   || ''),
+      size:     String(po['サイズ']   || ''),
+      orderQty,
+      dueDate:  String(po['希望納期'] || ''),
+    });
+  });
+
+  S.orderRemaining = [];
+  Object.entries(poMap).forEach(([itemNo, data]) => {
+    const shipped   = shippedMap[itemNo] || 0;
+    const remaining = Math.max(0, data.qty - shipped);
+    if (remaining === 0) return;
+    S.orderRemaining.push({ itemNo, totalQty: remaining, detail: data.rows });
+  });
 }
 
 // 注文残リスト描画
