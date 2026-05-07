@@ -1,10 +1,9 @@
-
 <!DOCTYPE html>
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>在庫管理ハブ</title>
+<title>在庫管理ハブ｜子供服</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500;700;900&family=DM+Mono:wght@400;500&family=Syne:wght@700;800&display=swap" rel="stylesheet">
 <style>
 :root {
@@ -2027,13 +2026,15 @@ function saveOrder(){
   const orderDate=document.getElementById('oOrderDate').value;
   const deadline=document.getElementById('oDeadline').value;
   if(!name||!factory||isNaN(qty)||!orderDate||!deadline){toast('必須項目を入力してください','error');return;}
+  const color=document.getElementById('oVariant').value.trim().split('/')[0]||'';
+  const size =document.getElementById('oVariant').value.trim().split('/')[1]||'';
   const obj={
     id:S.editOrderId||nextOid++,
     sku:document.getElementById('oSku').value.trim(),
     name, factory, contact:document.getElementById('oContact').value.trim(),
     qty, price:parseInt(document.getElementById('oPrice').value)||0,
     variant:document.getElementById('oVariant').value.trim(),
-    orderDate, deadline,
+    color, size, orderDate, deadline,
     status:document.getElementById('oStatus').value,
     note:document.getElementById('oNote').value.trim(),
   };
@@ -2042,14 +2043,50 @@ function saveOrder(){
   save();closeModal('orderModal');renderOrders();renderTimeline();
   updateOrderKpi();
   toast(S.editOrderId?'✏️ 更新しました':'✅ 発注を追加しました','success');
+  // GASクラウドに保存してスタッフ全員に共有
+  if(GAS_ENABLED && GAS_URL) pushOrdersToCloud_([obj]);
 }
 function advanceOrder(id){
   const order=S.orders.find(x=>x.id===id);if(!order)return;
   const seq=['draft','ordered','production','shipped','received'];
   const cur=seq.indexOf(order.status);
-  if(cur<seq.length-1){order.status=seq[cur+1];save();renderOrders();renderTimeline();updateOrderKpi();toast(`▶ ステータスを「${orderStatusMap[order.status].label}」に更新`,'success');}
+  if(cur<seq.length-1){
+    order.status=seq[cur+1];save();renderOrders();renderTimeline();updateOrderKpi();
+    toast(`▶ ステータスを「${orderStatusMap[order.status].label}」に更新`,'success');
+    if(GAS_ENABLED && GAS_URL) pushAllOrdersToCloud_();
+  }
 }
-function deleteOrder(id){S.orders=S.orders.filter(x=>x.id!==id);save();renderOrders();renderTimeline();updateOrderKpi();toast('🗑️ 削除しました');}
+function deleteOrder(id){
+  S.orders=S.orders.filter(x=>x.id!==id);save();renderOrders();renderTimeline();updateOrderKpi();
+  toast('🗑️ 削除しました');
+  if(GAS_ENABLED && GAS_URL) pushAllOrdersToCloud_();
+}
+
+// 全発注データをGASに上書き保存（削除・ステータス変更時用）
+async function pushAllOrdersToCloud_(){
+  try {
+    const gasRows = S.orders.map(r => ({
+      '発注日':   r.orderDate || '',
+      '工場名':   r.factory   || '',
+      '品番':     r.sku       || '',
+      '商品名':   r.name      || '',
+      'カラー':   r.color     || r.variant?.split('/')[0] || '',
+      'サイズ':   r.size      || r.variant?.split('/')[1] || '',
+      '発注数':   r.qty       || 0,
+      '希望納期': r.deadline  || '',
+      'ステータス': r.status  || '',
+    }));
+    const res = await fetch(GAS_URL, {
+      method: 'POST',
+      body: JSON.stringify({ action: 'savePurchaseOrders', rows: gasRows, overwrite: true })
+    });
+    const j = await res.json();
+    if(!j.ok) throw new Error(j.error);
+    toast('☁️ クラウドに保存しました','success');
+  } catch(e) {
+    toast('⚠️ クラウド保存失敗: '+e.message,'error');
+  }
+}
 function updateOrderKpi(){
   const active=S.orders.filter(o=>['ordered','production','shipped'].includes(o.status));
   const today=new Date();
