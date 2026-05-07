@@ -3978,7 +3978,7 @@ async function loadFromCloud(force) {
     const ordersData   = d.purchaseOrders || d.orders || [];
     if (d.reserves)  S.reserves  = d.reserves;
     if (d.shipments) S.shipments = d.shipments;
-    if (d.arrivals && d.arrivals.length > 0) { S.arrivals = d.arrivals; localStorage.setItem('hub_arrivals', JSON.stringify(S.arrivals)); }
+    if (d.arrivals) { S.arrivals = d.arrivals; localStorage.setItem('hub_arrivals', JSON.stringify(S.arrivals)); }
 
     console.log('[Cloud] 取得件数:', allProducts.length, '/ total:', d.total);
     if (allProducts.length > 0) {
@@ -3995,26 +3995,24 @@ async function loadFromCloud(force) {
       console.warn('[Cloud] 商品データが0件。GASのスプレッドシートとaction=getDataのレスポンスを確認してください。');
     }
     if (transitData.length > 0) { S.transit = transitData; localStorage.setItem('hub_transit', JSON.stringify(S.transit)); }
-    if (ordersData.length  > 0) {
-      // GASから返ってきた発注データをHTML側のフォーマットに変換
-      S.orders = ordersData.map((r, i) => ({
-        id:        r.id        || (Date.now() + i),
-        sku:       r['品番']   || r.sku       || '',
-        name:      r['商品名'] || r.name      || '',
-        factory:   r['工場名'] || r.factory   || '',
-        color:     r['カラー'] || r.color     || '',
-        size:      r['サイズ'] || r.size      || '',
-        variant:   r.variant   || [r['カラー']||r.color||'', r['サイズ']||r.size||''].filter(Boolean).join('/'),
-        qty:       Number(r['発注数'] || r.qty) || 0,
-        orderDate: r['発注日'] || r.orderDate || '',
-        deadline:  r['希望納期']|| r.deadline  || '',
-        status:    r['ステータス']|| r.status  || 'ordered',
-        contact:   r.contact   || '',
-        price:     Number(r.price) || 0,
-        note:      r.note      || '',
-      }));
-      localStorage.setItem('hub_orders', JSON.stringify(S.orders));
-    }
+    // 発注データは0件でも必ず上書き（スプレッドシートで削除した内容を反映するため）
+    S.orders = ordersData.map((r, i) => ({
+      id:        r.id        || (Date.now() + i),
+      sku:       r['品番']   || r.sku       || '',
+      name:      r['商品名'] || r.name      || '',
+      factory:   r['工場名'] || r.factory   || '',
+      color:     r['カラー'] || r.color     || '',
+      size:      r['サイズ'] || r.size      || '',
+      variant:   r.variant   || [r['カラー']||r.color||'', r['サイズ']||r.size||''].filter(Boolean).join('/'),
+      qty:       Number(r['発注数'] || r.qty) || 0,
+      orderDate: r['発注日'] || r.orderDate || '',
+      deadline:  r['希望納期']|| r.deadline  || '',
+      status:    r['ステータス']|| r.status  || 'ordered',
+      contact:   r.contact   || '',
+      price:     Number(r.price) || 0,
+      note:      r.note      || '',
+    }));
+    localStorage.setItem('hub_orders', JSON.stringify(S.orders));
 
     updateSyncStatus('connected');
     if(typeof refreshOverview === 'function') refreshOverview();
