@@ -2936,6 +2936,15 @@ function renderProducts() {
     shipmentMap[key] = (shipmentMap[key] || 0) + (s.qty || 0);
   });
 
+  // 注文残マップ（品番 → 残数合計）
+  const remainingByItemNo = {};
+  const remainingSrc = (S.orderRemaining && S.orderRemaining.length > 0) ? S.orderRemaining : [];
+  remainingSrc.forEach(r => {
+    const key = r.itemNo || r.sku || '';
+    if (!key) return;
+    remainingByItemNo[key] = (remainingByItemNo[key] || 0) + (r.remaining || 0);
+  });
+
   thead.innerHTML = `
     <th style="${thSort}text-align:left" onclick="setSortKey('itemNo')" ${thSortHover}>品番${sortIcon('itemNo')}</th>
     <th class="col-jan${janVisible?'':' jan-hidden'}" style="${thBase}text-align:left">JANコード</th>
@@ -2982,6 +2991,7 @@ function renderProducts() {
         <div onclick="setShipFilter('nonzero')" id="sf_nonzero" style="padding:7px 14px;cursor:pointer;font-size:11px;font-weight:600;white-space:nowrap">　1以上のみ</div>
       </div>
     </th>
+    <th style="${thBase}text-align:right;background:#f0f4ff;white-space:nowrap">📋 注文残</th>
   `;
 
   // Build rows
@@ -2997,6 +3007,8 @@ function renderProducts() {
     const priceStr = (!isNaN(priceNum) && priceNum > 0) ? '¥' + priceNum.toLocaleString() : '—';
     const shipKey = p.itemNo || '';
     const shipQty = shipmentMap[shipKey] || 0;
+    // 注文残マップ（品番で集計）
+    const remainingQty = remainingByItemNo[shipKey] || 0;
     return `<tr>
       <td style="padding:10px 12px;border-bottom:1px solid var(--rule);font-family:'DM Mono',monospace;font-size:11px;font-weight:600;white-space:nowrap">${p.itemNo||'—'}</td>
       <td class="col-jan${janVisible?'':' jan-hidden'}" style="padding:10px 12px;border-bottom:1px solid var(--rule);font-family:'DM Mono',monospace;font-size:11px;color:var(--muted);white-space:nowrap">${p.jan||'—'}</td>
@@ -3007,6 +3019,7 @@ function renderProducts() {
       ${chCells}
       <td style="padding:10px 12px;border-bottom:1px solid var(--rule);text-align:right;font-family:'DM Mono',monospace;font-weight:700;font-size:14px" class="${totalCls}">${total}</td>
       <td style="padding:10px 12px;border-bottom:1px solid var(--rule);text-align:right;font-family:'DM Mono',monospace;font-weight:700;background:#fff8e6;color:${shipQty>0?'var(--amber)':'var(--muted)'}">${shipQty > 0 ? shipQty.toLocaleString() : '—'}</td>
+      <td style="padding:10px 12px;border-bottom:1px solid var(--rule);text-align:right;font-family:'DM Mono',monospace;font-weight:700;background:#f0f4ff;color:${remainingQty>0?'var(--blue)':'var(--muted)'}">${remainingQty > 0 ? remainingQty.toLocaleString() : '—'}</td>
     </tr>`;
   }).join('');
 
