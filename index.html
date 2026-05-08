@@ -2740,9 +2740,16 @@ function exportProductsCsv() {
     if (key) shipmentMapCsv[key] = (shipmentMapCsv[key] || 0) + (s.qty || 0);
   });
 
+  // 注文残マップ
+  const remainingMapCsv = {};
+  (S.orderRemaining || []).forEach(r => {
+    const key = r.itemNo || r.sku || '';
+    if (key) remainingMapCsv[key] = (remainingMapCsv[key] || 0) + (r.remaining || 0);
+  });
+
   // ヘッダー行：表示中チャネルのみ
   const chHeaders = activeChs.map(ch => ch.label);
-  const headers = ['品番', 'JANコード', '商品名', 'カラー', 'サイズ', '価格', ...chHeaders, '合計', '工場出荷中'];
+  const headers = ['品番', 'JANコード', '商品名', 'カラー', 'サイズ', '価格', ...chHeaders, '合計', '工場出荷中', '注文残'];
 
   const escape = v => {
     const s = String(v ?? '');
@@ -2750,9 +2757,10 @@ function exportProductsCsv() {
   };
 
   const csvRows = rows.map(p => {
-    const chVals  = activeChs.map(ch => p[ch.key] || 0);
-    const total   = chVals.reduce((s, v) => s + v, 0);
-    const shipQty = shipmentMapCsv[p.itemNo || ''] || 0;
+    const chVals      = activeChs.map(ch => p[ch.key] || 0);
+    const total       = chVals.reduce((s, v) => s + v, 0);
+    const shipQty     = shipmentMapCsv[p.itemNo || ''] || 0;
+    const remainingQty = remainingMapCsv[p.itemNo || ''] || 0;
     return [
       p.itemNo || '',
       p.jan    || '',
@@ -2763,6 +2771,7 @@ function exportProductsCsv() {
       ...chVals,
       total,
       shipQty,
+      remainingQty,
     ].map(escape).join(',');
   });
 
