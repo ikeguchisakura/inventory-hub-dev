@@ -831,14 +831,14 @@ a.lnk { color: var(--blue); text-decoration: underline; cursor: pointer; }
         <table>
           <thead>
             <tr>
-              <th onclick="setOrderSort('sku')" style="cursor:pointer">品番</th>
-              <th>商品名</th>
-              <th>カラー</th>
-              <th>サイズ</th>
-              <th>工場名</th>
-              <th class="text-right">発注数</th>
-              <th>発注日</th>
-              <th>納期</th>
+              <th onclick="setOrderSort('sku')" style="cursor:pointer">品番 <span id="orderSortSku"></span></th>
+              <th onclick="setOrderSort('name')" style="cursor:pointer">商品名 <span id="orderSortName"></span></th>
+              <th onclick="setOrderSort('color')" style="cursor:pointer">カラー <span id="orderSortColor"></span></th>
+              <th onclick="setOrderSort('size')" style="cursor:pointer">サイズ <span id="orderSortSize"></span></th>
+              <th onclick="setOrderSort('factory')" style="cursor:pointer">工場名 <span id="orderSortFactory"></span></th>
+              <th class="text-right" onclick="setOrderSort('qty')" style="cursor:pointer">発注数 <span id="orderSortQty"></span></th>
+              <th onclick="setOrderSort('orderDate')" style="cursor:pointer">発注日 <span id="orderSortOrderDate"></span></th>
+              <th onclick="setOrderSort('deadline')" style="cursor:pointer">納期 <span id="orderSortDeadline"></span></th>
               <th class="text-center">操作</th>
             </tr>
           </thead>
@@ -2172,6 +2172,11 @@ let orderSort = { key: 'sku', dir: 1 };
 function setOrderSort(key) {
   if (orderSort.key === key) orderSort.dir *= -1;
   else { orderSort.key = key; orderSort.dir = 1; }
+  // アイコン更新
+  ['sku','name','color','size','factory','qty','orderDate','deadline'].forEach(k => {
+    const el = document.getElementById('orderSort' + k.charAt(0).toUpperCase() + k.slice(1));
+    if (el) el.textContent = orderSort.key === k ? (orderSort.dir === 1 ? '▲' : '▼') : '';
+  });
   renderOrders();
 }
 
@@ -2484,6 +2489,19 @@ function importOrderCsv() {
   save(); closeModal('orderCsvModal'); renderOrders(); renderRemaining(); updateOrderKpi();
   toast(`✅ ${newRows.length}件の発注を追加しました`, 'success');
   if (GAS_ENABLED && GAS_URL) pushOrdersToCloud_(newRows);
+}
+
+function exportRemainingCsv() {
+  const rows = calcRemaining();
+  if (rows.length === 0) { toast('注文残データがありません', 'warn'); return; }
+  const escape = v => { const s = String(v??''); return s.includes(',')||s.includes('"') ? `"${s.replace(/"/g,'""')}"` : s; };
+  const headers = ['品番','商品名','カラー','サイズ','発注合計','入荷合計','注文残','納期'];
+  const lines = rows.map(r => [r.sku||'',r.name||'',r.color||'',r.size||'',r.totalOrder||0,r.totalArrival||0,r.remaining||0,r.deadline||''].map(escape).join(','));
+  const csv = '\uFEFF' + headers.join(',') + '\n' + lines.join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const now = new Date().toLocaleDateString('ja-JP',{year:'numeric',month:'2-digit',day:'2-digit'}).replace(/\//g,'-');
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `注文残一覧_${now}.csv`; a.click();
+  toast(`📥 ${rows.length}件をCSV出力しました`, 'success');
 }
 
 function exportOrdersCsv() {
