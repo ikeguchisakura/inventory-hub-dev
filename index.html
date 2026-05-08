@@ -2198,7 +2198,7 @@ function calcRemaining() {
 function renderRemaining() {
   const search = (document.getElementById('remainingSearch')?.value || '').toLowerCase();
   let rows = calcRemaining().filter(r =>
-    !search || (r.sku+r.name+r.color+r.size).toLowerCase().includes(search)
+    !search || ((r.sku||r.itemNo||'')+r.name+r.color+r.size).toLowerCase().includes(search)
   );
   rows.sort((a, b) => {
     const av = a[remainingSort.key] ?? '';
@@ -2219,7 +2219,7 @@ function renderRemaining() {
   empty.style.display = 'none';
   const tdB = 'padding:8px 10px;border-bottom:1px solid var(--rule)';
   tbody.innerHTML = rows.map(r => `<tr>
-    <td style="${tdB};font-family:'DM Mono',monospace;font-size:11px;font-weight:600">${r.sku||'—'}</td>
+    <td style="${tdB};font-family:'DM Mono',monospace;font-size:11px;font-weight:600">${r.sku||r.itemNo||'—'}</td>
     <td style="${tdB};font-weight:600">${r.name||'—'}</td>
     <td style="${tdB}">${r.color||'—'}</td>
     <td style="${tdB}">${r.size||'—'}</td>
@@ -2380,7 +2380,7 @@ function handleArrivalCsvUpload(event) {
     }
     if (_pendingArrivalRows.length === 0) { toast('有効なデータがありませんでした', 'error'); return; }
     const remainingMap = {};
-    calcRemaining().forEach(r => { remainingMap[`${r.sku}||${r.color}||${r.size}`] = r.remaining; });
+    calcRemaining().forEach(r => { remainingMap[`${r.sku||r.itemNo}||${r.color}||${r.size}`] = r.remaining; });
     const tbody = document.getElementById('arrivalCsvPreviewBody');
     const tdB = 'padding:6px 10px;border-bottom:1px solid var(--rule)';
     tbody.innerHTML = _pendingArrivalRows.map(r => {
@@ -2585,7 +2585,7 @@ function exportRemainingCsv() {
   if (rows.length === 0) { toast('注文残データがありません', 'warn'); return; }
   const escape = v => { const s = String(v??''); return s.includes(',')||s.includes('"') ? `"${s.replace(/"/g,'""')}"` : s; };
   const headers = ['品番','商品名','カラー','サイズ','発注合計','入荷合計','注文残','納期'];
-  const lines = rows.map(r => [r.sku||'',r.name||'',r.color||'',r.size||'',r.totalOrder||0,r.totalArrival||0,r.remaining||0,r.deadline||''].map(escape).join(','));
+  const lines = rows.map(r => [(r.sku||r.itemNo||''),r.name||'',r.color||'',r.size||'',r.totalOrder||0,r.totalArrival||0,r.remaining||0,r.deadline||''].map(escape).join(','));
   const csv = '\uFEFF' + headers.join(',') + '\n' + lines.join('\n');
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
   const now = new Date().toLocaleDateString('ja-JP',{year:'numeric',month:'2-digit',day:'2-digit'}).replace(/\//g,'-');
