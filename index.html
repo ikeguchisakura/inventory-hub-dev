@@ -2377,6 +2377,100 @@ async function syncAllOrdersToCloud_() {
 
 function renderTimeline() { /* タイムライン削除済み */ }
 
+// ════════════════════════════════
+// 発注CSV一括追加
+// ════════════════════════════════
+let _pendingOrderRows = [];
+
+function openOrderCsvModal() {
+  _pendingOrderRows = [];
+  document.getElementById('orderCsvPreview').style.display = 'none';
+  document.getElementById('orderCsvImportBtn').style.display = 'none';
+  document.getElementById('orderCsvZoneLabel').textContent = '発注CSVをドロップ または クリック';
+  document.getElementById('orderCsvInput').value = '';
+  openModal('orderCsvModal');
+}
+
+function handleOrderCsvUpload(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    const rows = parseOrderCsvText_(e.target.result);
+    if (!rows || rows.length === 0) { toast('CSVを正しく読み取れませんでした', 'error'); return; }
+    _pendingOrderRows = rows;
+    const tbody = document.getElementById('orderCsvPreviewBody');
+    tbody.innerHTML = rows.slice(0, 100).map(r => `<tr>
+      <td style="padding:6px 10px;border-bottom:1px solid var(--rule);font-family:'DM Mono',monospace;font-size:11px">${r.orderDate||'—'}</td>
+      <td style="padding:6px 10px;border-bottom:1px solid var(--rule);font-weight:600">${r.factory||'—'}</td>
+      <td style="padding:6px 10px;border-bottom:1px solid var(--rule);font-family:'DM Mono',monospace;font-size:11px">${r.sku||'—'}</td>
+      <td style="padding:6px 10px;border-bottom:1px solid var(--rule);font-weight:600">${r.name||'—'}</td>
+      <td style="padding:6px 10px;border-bottom:1px solid var(--rule)">${r.color||'—'}</td>
+      <td style="padding:6px 10px;border-bottom:1px solid var(--rule)">${r.size||'—'}</td>
+      <td style="padding:6px 10px;border-bottom:1px solid var(--rule);text-align:right;font-family:'DM Mono',monospace;font-weight:700;color:var(--blue)">${r.qty.toLocaleString()}</td>
+      <td style="padding:6px 10px;border-bottom:1px solid var(--rule);font-family:'DM Mono',monospace;font-size:11px">${r.deadline||'—'}</td>
+    </tr>`).join('') + (rows.length > 100 ? `<tr><td colspan="8" style="padding:8px;text-align:center;color:var(--muted);font-size:11px">…他 ${rows.length-100} 行</td></tr>` : '');
+    document.getElementById('orderCsvPreview').style.display = '';
+    document.getElementById('orderCsvPreviewTitle').textContent = `プレビュー: ${rows.length} 行`;
+    document.getElementById('orderCsvImportBtn').style.display = '';
+    document.getElementById('orderCsvZoneLabel').textContent = `✅ ${file.name}（${rows.length}行）`;
+  };
+  reader.readAsText(file, 'UTF-8');
+  event.target.value = '';
+}
+
+function parseOrderCsvText_(text) {
+  text = text.replace(/^\uFEFF/, '');
+  const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  if (lines.length < 2) return [];
+  const splitLine = line => {
+    const r = []; let cur = '', inQ = false;
+    for (const c of line) { if(c==='"'){inQ=!inQ;}else if(c===','&&!inQ){r.push(cur.trim());cur='';}else cur+=c; }
+    r.push(cur.trim());
+    return r.map(v => v.replace(/^"|"$/g,'').replace(/""/g,'"').trim());
+  };
+  const result = [];
+  for (let i = 1; i < lines.length; i++) {
+    const cols = splitLine(lines[i]);
+    if (cols.length < 5) continue;
+    const orderDate = cols[0]||'', factory = cols[1]||'', sku = cols[2]||'';
+    const name = cols[3]||'', color = cols[4]||'', size = cols[5]||'';
+    const qty = parseInt(cols[6],10)||0, deadline = cols[7]||'';
+    if (!name && !sku) continue;
+    result.push({ orderDate, factory, sku, name, color, size, qty, deadline,
+      variant: [color,size].filter(Boolean).join('/'), status: 'ordered' });
+  }
+  return result;
+}
+
+function cancelOrderCsvUpload() {
+  _pendingOrderRows = [];
+  document.getElementById('orderCsvPreview').style.display = 'none';
+  document.getElementById('orderCsvImportBtn').style.display = 'none';
+  document.getElementById('orderCsvZoneLabel').textContent = '発注CSVをドロップ または クリック';
+}
+
+function importOrderCsv() {
+  if (!_pendingOrderRows || _pendingOrderRows.length === 0) { toast('追加するデータがありません', 'warn'); return; }
+  const newRows = _pendingOrderRows.map(r => ({ ...r, id: nextOid++ }));
+  S.orders = [...newRows, ...S.orders];
+  save(); closeModal('orderCsvModal'); renderOrders(); renderRemaining(); updateOrderKpi();
+  toast(`✅ ${newRows.length}件の発注を追加しました`, 'success');
+  if (GAS_ENABLED && GAS_URL) pushOrdersToCloud_(newRows);
+}
+
+function exportOrdersCsv() {
+  if (!S.orders || S.orders.length === 0) { toast('発注データがありません', 'warn'); return; }
+  const escape = v => { const s = String(v??''); return s.includes(',')||s.includes('"') ? `"${s.replace(/"/g,'""')}"` : s; };
+  const headers = ['発注日','工場名','品番','商品名','カラー','サイズ','発注数','希望納期'];
+  const rows = S.orders.map(o => [o.orderDate||'',o.factory||'',o.sku||'',o.name||'',o.color||'',o.size||'',o.qty||0,o.deadline||''].map(escape).join(','));
+  const csv = '\uFEFF' + headers.join(',') + '\n' + rows.join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const now = new Date().toLocaleDateString('ja-JP',{year:'numeric',month:'2-digit',day:'2-digit'}).replace(/\//g,'-');
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `発注一覧_${now}.csv`; a.click();
+  toast(`📥 ${S.orders.length}件をCSV出力しました`, 'success');
+}
+
 
 // ════════════════════════════════
 // CHANNEL DEFINITIONS (全10拠点)
