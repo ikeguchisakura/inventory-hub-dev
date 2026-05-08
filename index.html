@@ -2375,6 +2375,33 @@ async function syncAllOrdersToCloud_() {
   }
 }
 
+async function forceSyncOrdersNow() {
+  if (!GAS_ENABLED || !GAS_URL) { toast('先にGAS URLを設定してください', 'warn'); return; }
+  if (!S.orders || S.orders.length === 0) { toast('発注データがありません', 'warn'); return; }
+  toast(`☁️ ${S.orders.length}件を送信中...`, 'success');
+  await syncAllOrdersToCloud_();
+}
+
+async function pushOrdersToCloud_(rows) {
+  // 新規追加分だけGASに送る（追記）
+  try {
+    const gasRows = rows.map(r => ({
+      '発注日': r.orderDate||'', '工場名': r.factory||'', '品番': r.sku||'',
+      '商品名': r.name||'', 'カラー': r.color||'', 'サイズ': r.size||'',
+      '発注数': r.qty||0, '希望納期': r.deadline||'',
+    }));
+    const res = await fetch(GAS_URL, {
+      method: 'POST',
+      body: JSON.stringify({ action: 'savePurchaseOrders', rows: gasRows })
+    });
+    const j = await res.json();
+    if (!j.ok) throw new Error(j.error);
+    toast('☁️ クラウドに保存しました', 'success');
+  } catch(e) {
+    toast('⚠️ クラウド保存失敗: ' + e.message, 'error');
+  }
+}
+
 function renderTimeline() { /* タイムライン削除済み */ }
 
 // ════════════════════════════════
@@ -4746,6 +4773,7 @@ function setupDropZone(zoneId, inputId, handler) {
     <div class="modal-foot">
       <button class="btn btn-ghost" onclick="closeModal('gasModal')">キャンセル</button>
       <button class="btn btn-ghost" onclick="testGasConnection()">🔗 接続テスト</button>
+      <button class="btn btn-ghost" onclick="forceSyncOrdersNow()">☁️ 発注データ全件保存</button>
       <button class="btn btn-primary" onclick="saveGasSettings()">保存して有効化</button>
     </div>
   </div>
