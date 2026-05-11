@@ -4397,6 +4397,25 @@ async function showMeta() {
   }
 }
 
+// ════════════════════════════════
+// ドラッグ&ドロップ対応
+// ════════════════════════════════
+function setupDropZone(zoneId, inputId, handler) {
+  const zone = document.getElementById(zoneId);
+  if (!zone) return;
+  zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag'); });
+  zone.addEventListener('dragleave', () => zone.classList.remove('drag'));
+  zone.addEventListener('drop', e => {
+    e.preventDefault(); zone.classList.remove('drag');
+    const file = e.dataTransfer.files[0];
+    if (!file) return;
+    const dt = new DataTransfer(); dt.items.add(file);
+    const input = document.getElementById(inputId);
+    input.files = dt.files;
+    handler({ target: input });
+  });
+}
+
 // ── 起動時初期化 ──────────────────────────────────────
 window.addEventListener('load', function() {
   refreshOverview();
@@ -4764,25 +4783,6 @@ function initSiPage() {
   setupDropZone('siSalesZone', 'siSalesInput', handleSiSalesCsv);
 }
 
-// ドラッグ&ドロップ対応
-// ════════════════════════════════
-function setupDropZone(zoneId, inputId, handler) {
-  const zone = document.getElementById(zoneId);
-  if (!zone) return;
-  zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag'); });
-  zone.addEventListener('dragleave', () => zone.classList.remove('drag'));
-  zone.addEventListener('drop', e => {
-    e.preventDefault(); zone.classList.remove('drag');
-    const file = e.dataTransfer.files[0];
-    if (!file) return;
-    // inputにファイルをセットしてイベント発火
-    const dt = new DataTransfer(); dt.items.add(file);
-    const input = document.getElementById(inputId);
-    input.files = dt.files;
-    handler({ target: input });
-  });
-}
-// setupDropZone は window.onload 内で呼び出し済み
 </script>
 
 <!-- ══════════════ PAGE: SHIPINSTRUCT ══════════════ -->
