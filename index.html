@@ -3078,6 +3078,7 @@ function buildProductsFromSmaregi(data) {
     kobe:       Number(d.kobe)        || 0,
     bazar:      Number(d.bazar)       || 0,
     linegift:   Number(d.linegift)    || 0,
+    smTotal:    Number(d.smTotal)     || 0,
     zozo:       0,
     amazon:     0,
     rakuten:    0,
@@ -3161,16 +3162,16 @@ const EXT_CHANNELS = {
       'このツールにファイルを取込',
     ],
     fixedMapping: {
-      sku:   null,
+      sku:   '取引先品番',
       jan:   'JANコード',
       name:  '商品名',
-      color: null,
-      size:  null,
+      color: 'カラー名',
+      size:  'サイズ名',
       price: null,
       stock: '受注可能倉庫在庫',
     },
     patterns: {
-      sku:   ['sku管理番号','商品管理番号'],
+      sku:   ['取引先品番','sku管理番号'],
       name:  ['商品名'],
       stock: ['受注可能倉庫在庫'],
     },
@@ -3637,8 +3638,11 @@ function parseCSV(text){
     return r;
   };
   // ヘッダーの列名を確実にトリム（全角スペース・改行・BOMなど含む）
-  const headers=parse(lines[0]).map(h=>h.replace(/^[\s\u3000\uFEFF\r\n]+|[\s\u3000\uFEFF\r\n]+$/g,''));
-  const rows=lines.slice(1).map(l=>parse(l)).filter(r=>r.some(c=>c));
+  // 楽天在庫帳票対応：1行目がメタ行(≪在庫集計≫)ならば2行目をヘッダーに使用
+  const hasMetaRow = /≪|\u226a/.test(lines[0]);
+  const headerIdx = hasMetaRow ? 1 : 0;
+  const headers=parse(lines[headerIdx]).map(h=>h.replace(/^[\s\u3000\uFEFF\r\n]+|[\s\u3000\uFEFF\r\n]+$/g,''));
+  const rows=lines.slice(headerIdx+1).map(l=>parse(l)).filter(r=>r.some(c=>c));
   return {headers,rows};
 }
 
@@ -3960,6 +3964,7 @@ function smImport(){
     kobe:       getNum(row, 'kobe'),
     bazar:      getNum(row, 'bazar'),
     linegift:   getNum(row, 'linegift'),
+    get smTotal() { return this.wh + this.online + this.daikanyama + this.nagoya + this.kobe + this.bazar + this.linegift; },
   }));
   buildProductsFromSmaregi(productData);
 
@@ -4592,14 +4597,9 @@ function getSiOwnStock(csSku) {
   const products = JSON.parse(localStorage.getItem('hub_products') || '[]');
   const match = products.find(p => String(p.itemNo||'').trim() === String(csSku).trim());
   if (!match) return null;
-  const wh = match.warehouse||0, on = match.shopify||0;
-  const da = match.daikanyama||0, na = match.nagoya||0;
-  const ko = match.kobe||0, bz = match.bazar||0;
-  return {
-    total: wh+on+da+na+ko+bz,
-    warehouse: wh, online: on, daikanyama: da,
-    nagoya: na, kobe: ko, bazar: bz
-  };
+  // smTotal: スマレジ取込時の合計数を優先使用
+  const total = match.smTotal || (match.warehouse||0)+(match.shopify||0)+(match.daikanyama||0)+(match.nagoya||0)+(match.kobe||0)+(match.bazar||0)+(match.linegift||0);
+  return { total };
 }
 
 // ── テーブル描画 ──
@@ -4623,22 +4623,6 @@ function renderSiTable() {
     const userQty = siUserQty[key] !== undefined ? siUserQty[key] : '';
     const userMemo = siUserMemo[key] || '';
 
-    // 店舗別在庫チップ
-    let storeHtml = '<span style="color:var(--muted);font-size:11px">—</span>';
-    if (r.ownStock) {
-      const chips = [
-        ['倉庫', r.ownStock.warehouse],
-        ['Online', r.ownStock.online],
-        ['代官山', r.ownStock.daikanyama],
-        ['名古屋', r.ownStock.nagoya],
-        ['神戸', r.ownStock.kobe],
-        ['bazar', r.ownStock.bazar],
-      ];
-      storeHtml = `<div class="si-store-mini">${chips.map(([n,v]) =>
-        `<span class="si-store-chip${v>0?' hi':''}">${n}:${v}</span>`
-      ).join('')}</div>`;
-    }
-
     const ownTotalHtml = r.ownStock !== null
       ? `<span class="${r.ownStock.total === 0 ? 'sc-out' : r.ownStock.total < r.combined ? 'sc-low' : 'sc-ok'}">${r.ownStock.total}</span>`
       : `<span style="color:var(--muted)">—</span>`;
@@ -4654,7 +4638,6 @@ function renderSiTable() {
       </td>
       <td class="text-right mono">${r.available}</td>
       <td class="text-right">${ownTotalHtml}</td>
-      <td>${storeHtml}</td>
       <td class="text-right mono" style="color:var(--blue);font-weight:700">${r.recommended}</td>
       <td class="text-center">
         <input type="number" class="si-qty-input${userQty !== '' ? ' changed' : ''}"
@@ -4712,11 +4695,11 @@ function siAutoFill() {
 
 // CSV出力
 function exportSiCsv() {
-  const header = ['CS品番','商品名','カラー','サイズ','価格タイプ','販売タイプ','直近30日販売数','前日販売数','注文数','合算数','販売可能数(ZOZO)','自社在庫合計','倉庫','オンライン','代官山','名古屋','神戸','bazar','推奨フォロー数','確定フォロー数','メモ'];
+  const header = ['CS品番','商品名','カラー','サイズ','価格タイプ','販売タイプ','直近30日販売数','前日販売数','注文数','合算数','販売可能数(ZOZO)','自社在庫合計(スマレジ)','推奨フォロー数','確定フォロー数','メモ'];
   const rows = siRows.map(r => {
-    const own = r.ownStock || {total:0,warehouse:0,online:0,daikanyama:0,nagoya:0,kobe:0,bazar:0};
+    const own = r.ownStock || {total:0};
     const qty = siUserQty[r.key] !== undefined ? siUserQty[r.key] : r.recommended;
-    return [r.csSku, r.name, r.color, r.size, r.priceType||'', r.salesType||'', r.sales30d||0, r.prevDay, r.orderQty, r.combined, r.available, own.total, own.warehouse, own.online, own.daikanyama, own.nagoya, own.kobe, own.bazar, r.recommended, qty, siUserMemo[r.key]||''];
+    return [r.csSku, r.name, r.color, r.size, r.priceType||'', r.salesType||'', r.sales30d||0, r.prevDay, r.orderQty, r.combined, r.available, own.total, r.recommended, qty, siUserMemo[r.key]||''];
   });
   const csv = [header, ...rows].map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
   const bom = '\uFEFF';
@@ -4875,10 +4858,7 @@ function initSiPage() {
             <th>サイズ</th>
             <th class="text-right" title="前日販売数 + 注文数">合算数<br><span style="font-size:9px;font-weight:400;color:var(--muted)">前日+注文</span></th>
             <th class="text-right">販売可能数<br><span style="font-size:9px;font-weight:400;color:var(--muted)">ZOZO</span></th>
-            <th class="text-right" title="倉庫+オンライン+代官山+名古屋+神戸+bazar">自社在庫<br><span style="font-size:9px;font-weight:400;color:var(--muted)">合計</span></th>
-            <th>
-              <span title="倉庫/オンライン/代官山/名古屋/神戸/bazar">店舗別在庫</span>
-            </th>
+            <th class="text-right">自社在庫<br><span style="font-size:9px;font-weight:400;color:var(--muted)">スマレジ合計</span></th>
             <th class="text-right">推奨<br><span style="font-size:9px;font-weight:400;color:var(--muted)">フォロー</span></th>
             <th style="width:80px" class="text-center">フォロー数<br><span style="font-size:9px;font-weight:400;color:var(--muted)">確定入力</span></th>
             <th>メモ</th>
