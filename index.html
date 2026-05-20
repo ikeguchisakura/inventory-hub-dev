@@ -4604,6 +4604,8 @@ function tryBuildSiTable() {
 
     // 自社在庫（スマレジ取込済みデータから品番でマッチ）
     const ownStock = getSiOwnStock(s['CS品番'] || '');
+    // 工場出荷中（S.shipmentsから品番で集計）
+    const shipQty = getSiShipQty(s['CS品番'] || '');
 
     // 推奨フォロー数（合算数と販売可能数の差を埋める、ただし自社在庫上限）
     const deficit = Math.max(0, combined - available);
@@ -4613,7 +4615,7 @@ function tryBuildSiTable() {
       key, csSku: s['CS品番']||'', name: s['商品名']||s['商品名 ']||'',
       color: s['カラー']||'', size: s['サイズ']||'',
       prevDay, orderQty, combined, available,
-      ownStock,
+      ownStock, shipQty,
       recommended,
       priceType: s['価格タイプ']||'',
       salesType: s['販売タイプ']||'',
@@ -4633,12 +4635,33 @@ function tryBuildSiTable() {
 // スマレジ取込済みデータから自社在庫を取得
 function getSiOwnStock(csSku) {
   if (!csSku) return null;
-  const products = JSON.parse(localStorage.getItem('hub_products') || '[]');
+  // 優先順: ① S.products（クラウド同期済み含む）→ ② sessionStorage → ③ localStorage
+  let products = (S.products && S.products.length > 0) ? S.products : null;
+  if (!products) {
+    try { products = JSON.parse(sessionStorage.getItem('hub_products_session') || 'null'); } catch(e) {}
+  }
+  if (!products) {
+    try { products = JSON.parse(localStorage.getItem('hub_products') || 'null'); } catch(e) {}
+  }
+  if (!products) return null;
   const match = products.find(p => String(p.itemNo||'').trim() === String(csSku).trim());
   if (!match) return null;
-  // smTotal: スマレジ取込時の合計数を優先使用
-  const total = match.smTotal || (match.warehouse||0)+(match.shopify||0)+(match.daikanyama||0)+(match.nagoya||0)+(match.kobe||0)+(match.bazar||0)+(match.linegift||0);
+  // 倉庫・オンライン・代官山・名古屋・神戸・bazarの合計（linegiftは除外）
+  const total = (Number(match.warehouse)||0)
+              + (Number(match.shopify)||0)
+              + (Number(match.daikanyama)||0)
+              + (Number(match.nagoya)||0)
+              + (Number(match.kobe)||0)
+              + (Number(match.bazar)||0);
   return { total };
+}
+
+// 工場出荷中数を品番で取得
+function getSiShipQty(csSku) {
+  if (!csSku || !S.shipments || S.shipments.length === 0) return 0;
+  return S.shipments
+    .filter(s => String(s.itemNo||'').trim() === String(csSku).trim())
+    .reduce((sum, s) => sum + (Number(s.qty)||0), 0);
 }
 
 // ── テーブル描画 ──
@@ -4666,6 +4689,10 @@ function renderSiTable() {
       ? `<span class="${r.ownStock.total === 0 ? 'sc-out' : r.ownStock.total < r.combined ? 'sc-low' : 'sc-ok'}">${r.ownStock.total}</span>`
       : `<span style="color:var(--muted)">—</span>`;
 
+    const shipQtyHtml = r.shipQty > 0
+      ? `<span style="color:var(--amber);font-weight:700">${r.shipQty}</span>`
+      : `<span style="color:var(--muted)">—</span>`;
+
     return `<tr class="${rowCls}">
       <td class="mono text-center" style="color:var(--muted);font-size:11px">${statusIcon} ${i+1}</td>
       <td class="mono fw7" style="font-size:12px">${r.csSku}</td>
@@ -4677,6 +4704,7 @@ function renderSiTable() {
       </td>
       <td class="text-right mono">${r.available}</td>
       <td class="text-right">${ownTotalHtml}</td>
+      <td class="text-right" style="background:#fff8e6">${shipQtyHtml}</td>
       <td class="text-right mono" style="color:var(--blue);font-weight:700">${r.recommended}</td>
       <td class="text-center">
         <input type="number" class="si-qty-input${userQty !== '' ? ' changed' : ''}"
@@ -4734,11 +4762,11 @@ function siAutoFill() {
 
 // CSV出力
 function exportSiCsv() {
-  const header = ['CS品番','商品名','カラー','サイズ','価格タイプ','販売タイプ','直近30日販売数','前日販売数','注文数','合算数','販売可能数(ZOZO)','自社在庫合計(スマレジ)','推奨フォロー数','確定フォロー数','メモ'];
+  const header = ['CS品番','商品名','カラー','サイズ','価格タイプ','販売タイプ','直近30日販売数','前日販売数','注文数','合算数','販売可能数(ZOZO)','自社在庫合計(スマレジ)','工場出荷中','推奨フォロー数','確定フォロー数','メモ'];
   const rows = siRows.map(r => {
     const own = r.ownStock || {total:0};
     const qty = siUserQty[r.key] !== undefined ? siUserQty[r.key] : r.recommended;
-    return [r.csSku, r.name, r.color, r.size, r.priceType||'', r.salesType||'', r.sales30d||0, r.prevDay, r.orderQty, r.combined, r.available, own.total, r.recommended, qty, siUserMemo[r.key]||''];
+    return [r.csSku, r.name, r.color, r.size, r.priceType||'', r.salesType||'', r.sales30d||0, r.prevDay, r.orderQty, r.combined, r.available, own.total, r.shipQty||0, r.recommended, qty, siUserMemo[r.key]||''];
   });
   const csv = [header, ...rows].map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
   const bom = '\uFEFF';
@@ -4783,6 +4811,7 @@ function printSiSheet() {
             <th style="padding:7px 8px;border:1px solid #ddd;text-align:right">合算</th>
             <th style="padding:7px 8px;border:1px solid #ddd;text-align:right">販売可能</th>
             <th style="padding:7px 8px;border:1px solid #ddd;text-align:right">自社在庫</th>
+            <th style="padding:7px 8px;border:1px solid #ddd;text-align:right;background:#fff8e6">🚢出荷中</th>
             <th style="padding:7px 8px;border:1px solid #ddd;text-align:right;background:#e8f4ff;font-weight:900">出荷数</th>
             <th style="padding:7px 8px;border:1px solid #ddd">メモ</th>
           </tr>
@@ -4799,6 +4828,7 @@ function printSiSheet() {
               <td style="padding:6px 8px;border:1px solid #ddd;text-align:right;font-weight:700">${r.combined}</td>
               <td style="padding:6px 8px;border:1px solid #ddd;text-align:right">${r.available}</td>
               <td style="padding:6px 8px;border:1px solid #ddd;text-align:right">${own}</td>
+              <td style="padding:6px 8px;border:1px solid #ddd;text-align:right;background:#fff8e6;color:${r.shipQty>0?'#b07000':'#aaa'}">${r.shipQty > 0 ? r.shipQty : '—'}</td>
               <td style="padding:6px 8px;border:1px solid #ddd;text-align:right;font-size:15px;font-weight:900;background:#eaf4ff">${qty}</td>
               <td style="padding:6px 8px;border:1px solid #ddd;color:#666">${siUserMemo[r.key]||''}</td>
             </tr>`;
@@ -4898,6 +4928,7 @@ function initSiPage() {
             <th class="text-right" title="前日販売数 + 注文数">合算数<br><span style="font-size:9px;font-weight:400;color:var(--muted)">前日+注文</span></th>
             <th class="text-right">販売可能数<br><span style="font-size:9px;font-weight:400;color:var(--muted)">ZOZO</span></th>
             <th class="text-right">自社在庫<br><span style="font-size:9px;font-weight:400;color:var(--muted)">スマレジ合計</span></th>
+            <th class="text-right" style="background:#fff8e6">🚢 工場出荷中<br><span style="font-size:9px;font-weight:400;color:var(--muted)">輸送中合計</span></th>
             <th class="text-right">推奨<br><span style="font-size:9px;font-weight:400;color:var(--muted)">フォロー</span></th>
             <th style="width:80px" class="text-center">フォロー数<br><span style="font-size:9px;font-weight:400;color:var(--muted)">確定入力</span></th>
             <th>メモ</th>
