@@ -3411,14 +3411,19 @@ function renderExtPreview() {
 
   const getExt = (row, key) => extMapping[key] !== null && extMapping[key] !== undefined ? (row[extMapping[key]] || '') : '';
   const getExtNum = (row, key) => extMapping[key] !== null && extMapping[key] !== undefined ? (parseInt(row[extMapping[key]]) || 0) : 0;
+    // 楽天用：未入荷数・受注残数の列インデックスを取得
+  const rsvQtyIdx   = extChannel === 'rakuten' ? extColumns.findIndex(h => h.trim() === '未入荷数') : -1;
+  const orderQtyIdx = extChannel === 'rakuten' ? extColumns.findIndex(h => h.trim() === '受注残数') : -1;
   window._extImportData = extParsedRows.map(row => ({
-    sku:   getExt(row, 'sku'),
-    jan:   getExt(row, 'jan'),
-    name:  getExt(row, 'name'),
-    color: getExt(row, 'color') || extractColor(getExt(row, 'name')),
-    size:  getExt(row, 'size')  || extractSize(getExt(row, 'name')),
-    price: Number(getExt(row, 'price').replace(/[,，￥¥\s　]/g, '')) || 0,
-    stock: getExtNum(row, 'stock'),
+    sku:        getExt(row, 'sku'),
+    jan:        getExt(row, 'jan'),
+    name:       getExt(row, 'name'),
+    color:      getExt(row, 'color') || extractColor(getExt(row, 'name')),
+    size:       getExt(row, 'size')  || extractSize(getExt(row, 'name')),
+    price:      Number(getExt(row, 'price').replace(/[,，￥¥\s　]/g, '')) || 0,
+    stock:      getExtNum(row, 'stock'),
+    reserveQty: rsvQtyIdx   >= 0 ? (parseInt(row[rsvQtyIdx])   || 0) : 0,
+    rOrderQty:  orderQtyIdx >= 0 ? (parseInt(row[orderQtyIdx]) || 0) : 0,
   }));
 }
 
@@ -3490,13 +3495,35 @@ function extImport() {
     window._matchResult = { matched, unmatched, total: data.length };
   }
 
+  // 楽天の場合、S.reservesに予約データを追加（未入荷数>0 または受注残数>0 のもののみ）
+  if (extChannel === 'rakuten') {
+    const rakutenReserves = data
+      .filter(d => d.reserveQty > 0 || d.rOrderQty > 0)
+      .map(d => ({
+        channel:     '楽天',
+        csSku:       d.sku || '',
+        jan:         d.jan || '',
+        name:        d.name || '',
+        color:       d.color || '',
+        size:        d.size || '',
+        reserveQty:  d.reserveQty,
+        orderQty:    d.rOrderQty,
+        deliveryDate: '',
+      }));
+    // 既存の楽天レコードを入れ替えて新しいデータを追加
+    S.reserves = (S.reserves || []).filter(r => r.channel !== '楽天');
+    S.reserves.push(...rakutenReserves);
+    console.log('[楽天予約] 追加件数:', rakutenReserves.length);
+  }
+
   save();
   closeModal('externalCsvModal');
   refreshOverview();
   updateExtImportBadges();
   const mr = window._matchResult;
   const matchMsg = mr ? `（${mr.matched}件一致 / ${mr.unmatched}件未一致）` : '';
-  toast(`✅ ${cfg.icon} ${cfg.label} CSV取込完了 — ${data.length.toLocaleString()} SKU / 在庫合計${totalStock.toLocaleString()}点${matchMsg}`, 'success');
+  const rsvMsg = extChannel === 'rakuten' ? ` / 予約${(S.reserves||[]).filter(r=>r.channel==='楽天').length}件` : '';
+  toast(`✅ ${cfg.icon} ${cfg.label} CSV取込完了 — ${data.length.toLocaleString()} SKU / 在庫合計${totalStock.toLocaleString()}点${matchMsg}${rsvMsg}`, 'success');
   // クラウド同期（GAS設定済みの場合）
   pushChannelStockToCloud(data, extChannel);
 }
