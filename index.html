@@ -3189,9 +3189,9 @@ const EXT_CHANNELS = {
       'このツールにファイルを取込（TXTのまま対応）',
     ],
     patterns: {
-      sku:   ['出品者sku','seller-sku','seller_sku','sku','出品者sku'],
-      name:  ['item-name','item_name','商品名','title','name','商品タイトル'],
-      stock: ['quantity','在庫数','stock','qty','available','fulfillable-quantity'],
+      sku:   ['出品者sku','seller-sku','seller_sku','sku'],
+      name:  ['商品名','item-name','item_name','title','name','商品タイトル'],
+      stock: ['amazon出荷在庫(出荷可)','出品者出荷在庫(出荷可)','amazon出荷在庫(合計)','quantity','在庫数','available'],
     },
   },
 };
@@ -3301,7 +3301,7 @@ function handleExtCsv(e) {
   const file = e.target.files[0]; if (!file) return;
   readFileAutoEncoding(file, text => {
     if (!text) { toast('ファイルを読み込めませんでした', 'error'); return; }
-    const isTab = extChannel === 'amazon' || text.includes('\t');
+    const isTab = text.includes('\t');
     const parsed = isTab ? parseTSV(text) : parseCSV(text);
     if (parsed.headers.length === 0) { toast('CSVを読み込めませんでした。ファイルを確認してください', 'error'); return; }
     extColumns = parsed.headers;
