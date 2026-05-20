@@ -1304,7 +1304,7 @@ const S = {
   orderRemaining: safeGetItem('hub_order_remaining', []),
   channels: safeGetItem('hub_channels', {warehouse:0,shopify:0,daikanyama:0,nagoya:0,kobe:0,bazar:0,linegift:0,zozo:0,amazon:0,rakuten:0}),
   forecast: [],
-  reserves: [],
+  reserves: safeGetItem('hub_reserves', []),
   shipments: [],
   editTransitId: null,
   editOrderId: null,
@@ -1317,6 +1317,7 @@ function save(){
   localStorage.setItem('hub_transit', JSON.stringify(S.transit));
   localStorage.setItem('hub_orders', JSON.stringify(S.orders));
   localStorage.setItem('hub_channels', JSON.stringify(S.channels));
+  localStorage.setItem('hub_reserves', JSON.stringify(S.reserves));
 }
 
 // ════════════════════════════════
@@ -3178,6 +3179,16 @@ const EXT_CHANNELS = {
   },
   amazon: {
     label: 'Amazon', icon: '📦', color: '#ff9900',
+    fixedMap: true,
+    fixedMapping: {
+      sku:   '出品者SKU',
+      jan:   null,
+      name:  '商品名',
+      color: null,
+      size:  null,
+      price: null,
+      stock: 'Amazon出荷在庫(出荷可)',
+    },
     hint: `出品者SKU, ASIN, 商品名, 在庫数\nKD-001-90, B09XXXXXX, フラワーワンピース 90cm, 45\n※セラーセントラル → レポート → 出品レポート\n　→「出品詳細レポート（カスタム）」でダウンロード\n　※ファイルはタブ区切り（TXT）です`,
     guide: [
       'セラーセントラル（sellercentral.amazon.co.jp）にログイン',
@@ -3519,6 +3530,7 @@ function extImport() {
   save();
   closeModal('externalCsvModal');
   refreshOverview();
+  if (extChannel === 'rakuten') renderReserves();
   updateExtImportBadges();
   const mr = window._matchResult;
   const matchMsg = mr ? `（${mr.matched}件一致 / ${mr.unmatched}件未一致）` : '';
