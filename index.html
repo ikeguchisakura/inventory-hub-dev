@@ -332,6 +332,7 @@ a.lnk { color: var(--blue); text-decoration: underline; cursor: pointer; }
     <button class="nav-tab" onclick="goPage('forecast')">📈 発注予測</button>
     <button class="nav-tab" onclick="goPage('order')">🏭 工場発注</button>
     <button class="nav-tab" onclick="goPage('shipinstruct')">📋 出荷指示</button>
+    <button class="nav-tab" onclick="goPage('salesanalysis')">📣 売上分析</button>
   </div>
   <div class="nav-right" id="navDate"></div>
 </nav>
@@ -840,7 +841,7 @@ a.lnk { color: var(--blue); text-decoration: underline; cursor: pointer; }
               <th class="text-right" onclick="setOrderSort('qty')" style="cursor:pointer">発注数 <span id="orderSortQty"></span></th>
               <th onclick="setOrderSort('orderDate')" style="cursor:pointer">発注日 <span id="orderSortOrderDate"></span></th>
               <th onclick="setOrderSort('deadline')" style="cursor:pointer">納期 <span id="orderSortDeadline"></span></th>
-              <th class="text-center">操作</th>
+
             </tr>
           </thead>
           <tbody id="orderTable"></tbody>
@@ -848,7 +849,7 @@ a.lnk { color: var(--blue); text-decoration: underline; cursor: pointer; }
         <div id="orderEmpty" class="empty" style="display:none">
           <div class="empty-icon">🏭</div>
           <div class="empty-title">発注データなし</div>
-          <p style="font-size:12px;color:var(--muted);margin-top:4px">「＋ 発注を追加」から登録してください</p>
+          <p style="font-size:12px;color:var(--muted);margin-top:4px">発注CSVをDriveフォルダに置いて同期してください</p>
         </div>
       </div>
     </div>
@@ -1323,7 +1324,7 @@ function save(){
 // ════════════════════════════════
 // NAV / DATE
 // ════════════════════════════════
-const PAGES = ['overview','products','reserve','transit','forecast','order','shipinstruct'];
+const PAGES = ['overview','products','reserve','transit','forecast','order','shipinstruct','salesanalysis'];
 function goPage(id){
   PAGES.forEach(p=>{
     document.getElementById('page-'+p).classList.toggle('active', p===id);
@@ -2215,7 +2216,7 @@ function renderRemaining() {
     const icon = active ? (remainingSort.dir === 1 ? ' ▲' : ' ▼') : '';
     return `<th onclick="setRemainingSort('${key}')" style="cursor:pointer;${right?'text-align:right':''}${active?';color:var(--blue)':''}">${label}${icon}</th>`;
   };
-  thead.innerHTML = th('sku','品番')+th('name','商品名')+th('color','カラー')+th('size','サイズ')+th('totalOrder','発注合計',true)+th('totalArrival','入荷合計',true)+th('remaining','注文残',true)+th('deadline','納期');
+  thead.innerHTML = th('sku','品番')+th('name','商品名')+th('color','カラー')+th('size','サイズ')+th('factory','工場名')+th('totalOrder','発注合計',true)+th('totalArrival','入荷合計',true)+th('remaining','注文残',true)+th('deadline','納期');
   if (rows.length === 0) { tbody.innerHTML = ''; empty.style.display = 'block'; return; }
   empty.style.display = 'none';
   const tdB = 'padding:8px 10px;border-bottom:1px solid var(--rule)';
@@ -2224,6 +2225,7 @@ function renderRemaining() {
     <td style="${tdB};font-weight:600">${r.name||'—'}</td>
     <td style="${tdB}">${r.color||'—'}</td>
     <td style="${tdB}">${r.size||'—'}</td>
+    <td style="${tdB};color:var(--muted);font-size:12px">${r.factory||'—'}</td>
     <td style="${tdB};text-align:right;font-family:'DM Mono',monospace">${r.totalOrder.toLocaleString()}</td>
     <td style="${tdB};text-align:right;font-family:'DM Mono',monospace;color:var(--mint)">${r.totalArrival > 0 ? r.totalArrival.toLocaleString() : '—'}</td>
     <td style="${tdB};text-align:right;font-family:'DM Mono',monospace;font-weight:700;color:var(--amber)">${r.remaining.toLocaleString()}</td>
@@ -2284,12 +2286,6 @@ function renderOrders() {
     <td style="${tdB};text-align:right;font-family:'DM Mono',monospace;font-weight:700">${(o.qty||0).toLocaleString()}</td>
     <td style="${tdB};font-family:'DM Mono',monospace;font-size:11px">${o.orderDate||'—'}</td>
     <td style="${tdB};font-family:'DM Mono',monospace;font-size:11px">${o.deadline||'—'}</td>
-    <td style="${tdB};text-align:center">
-      <div style="display:flex;gap:5px;justify-content:center;">
-        <button class="btn-icon" onclick="openOrderModal(${o.id})">✏️</button>
-        <button class="btn-icon" onclick="deleteOrder(${o.id})">🗑️</button>
-      </div>
-    </td>
   </tr>`).join('');
 }
 
@@ -2585,8 +2581,8 @@ function exportRemainingCsv() {
   const rows = calcRemaining();
   if (rows.length === 0) { toast('注文残データがありません', 'warn'); return; }
   const escape = v => { const s = String(v??''); return s.includes(',')||s.includes('"') ? `"${s.replace(/"/g,'""')}"` : s; };
-  const headers = ['品番','商品名','カラー','サイズ','発注合計','入荷合計','注文残','納期'];
-  const lines = rows.map(r => [(r.sku||r.itemNo||''),r.name||'',r.color||'',r.size||'',r.totalOrder||0,r.totalArrival||0,r.remaining||0,r.deadline||''].map(escape).join(','));
+  const headers = ['品番','商品名','カラー','サイズ','工場名','発注合計','入荷合計','注文残','納期'];
+  const lines = rows.map(r => [(r.sku||r.itemNo||''),r.name||'',r.color||'',r.size||'',r.factory||'',r.totalOrder||0,r.totalArrival||0,r.remaining||0,r.deadline||''].map(escape).join(','));
   const csv = '\uFEFF' + headers.join(',') + '\n' + lines.join('\n');
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
   const now = new Date().toLocaleDateString('ja-JP',{year:'numeric',month:'2-digit',day:'2-digit'}).replace(/\//g,'-');
@@ -4646,13 +4642,8 @@ function getSiOwnStock(csSku) {
   if (!products) return null;
   const match = products.find(p => String(p.itemNo||'').trim() === String(csSku).trim());
   if (!match) return null;
-  // 倉庫・オンライン・代官山・名古屋・神戸・bazarの合計（linegiftは除外）
-  const total = (Number(match.warehouse)||0)
-              + (Number(match.shopify)||0)
-              + (Number(match.daikanyama)||0)
-              + (Number(match.nagoya)||0)
-              + (Number(match.kobe)||0)
-              + (Number(match.bazar)||0);
+  // オンライン在庫のみ（スマレジ取込済みデータから）
+  const total = Number(match.shopify) || 0;
   return { total };
 }
 
@@ -4762,7 +4753,7 @@ function siAutoFill() {
 
 // CSV出力
 function exportSiCsv() {
-  const header = ['CS品番','商品名','カラー','サイズ','価格タイプ','販売タイプ','直近30日販売数','前日販売数','注文数','合算数','販売可能数(ZOZO)','自社在庫合計(スマレジ)','工場出荷中','推奨フォロー数','確定フォロー数','メモ'];
+  const header = ['CS品番','商品名','カラー','サイズ','価格タイプ','販売タイプ','直近30日販売数','前日販売数','注文数','合算数','販売可能数(ZOZO)','自社在庫(オンライン)','工場出荷中','推奨フォロー数','確定フォロー数','メモ'];
   const rows = siRows.map(r => {
     const own = r.ownStock || {total:0};
     const qty = siUserQty[r.key] !== undefined ? siUserQty[r.key] : r.recommended;
@@ -4927,7 +4918,7 @@ function initSiPage() {
             <th>サイズ</th>
             <th class="text-right" title="前日販売数 + 注文数">合算数<br><span style="font-size:9px;font-weight:400;color:var(--muted)">前日+注文</span></th>
             <th class="text-right">販売可能数<br><span style="font-size:9px;font-weight:400;color:var(--muted)">ZOZO</span></th>
-            <th class="text-right">自社在庫<br><span style="font-size:9px;font-weight:400;color:var(--muted)">スマレジ合計</span></th>
+            <th class="text-right">自社在庫<br><span style="font-size:9px;font-weight:400;color:var(--muted)">オンライン</span></th>
             <th class="text-right" style="background:#fff8e6">🚢 工場出荷中<br><span style="font-size:9px;font-weight:400;color:var(--muted)">輸送中合計</span></th>
             <th class="text-right">推奨<br><span style="font-size:9px;font-weight:400;color:var(--muted)">フォロー</span></th>
             <th style="width:80px" class="text-center">フォロー数<br><span style="font-size:9px;font-weight:400;color:var(--muted)">確定入力</span></th>
@@ -4991,5 +4982,527 @@ function initSiPage() {
     </div>
   </div>
 </div>
+<!-- ============================================================
+     売上分析ページ（新規追加）
+     ============================================================ -->
+<div class="page" id="page-salesanalysis">
+  <div class="section-title">📣 売上分析</div>
+  <div class="section-sub">チャネル横断のファーストセラーを確認・蓄積データで昨年比較も可能</div>
+
+  <!-- アップロードエリア -->
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;margin-bottom:20px">
+
+    <!-- スマレジ -->
+    <div class="card" style="padding:14px">
+      <div style="font-size:12px;font-weight:700;margin-bottom:8px">🏪 スマレジ（店舗）</div>
+      <div style="display:flex;gap:6px;margin-bottom:6px">
+        <input type="date" id="sa-datefrom-smaregi" style="font-size:12px;padding:4px 8px;border:1px solid var(--rule);border-radius:6px;flex:1">
+        <span style="font-size:11px;line-height:30px">〜</span>
+        <input type="date" id="sa-dateto-smaregi" style="font-size:12px;padding:4px 8px;border:1px solid var(--rule);border-radius:6px;flex:1">
+      </div>
+      <div class="upload-zone" id="sa-drop-smaregi" onclick="document.getElementById('sa-file-smaregi').click()" style="padding:10px;font-size:12px">
+        📂 CSVをドロップ or クリック
+        <div id="sa-label-smaregi" style="font-size:11px;color:var(--mint);margin-top:2px"></div>
+      </div>
+      <input type="file" id="sa-file-smaregi" accept=".csv" style="display:none" onchange="onSaFileSelect('smaregi',this)">
+      <button class="btn btn-primary" style="width:100%;margin-top:6px;font-size:12px" onclick="uploadSalesData('smaregi')">保存</button>
+    </div>
+
+    <!-- Shopify -->
+    <div class="card" style="padding:14px">
+      <div style="font-size:12px;font-weight:700;margin-bottom:8px">🌐 Shopify（オンライン）</div>
+      <div style="display:flex;gap:6px;margin-bottom:6px">
+        <input type="date" id="sa-datefrom-shopify" style="font-size:12px;padding:4px 8px;border:1px solid var(--rule);border-radius:6px;flex:1">
+        <span style="font-size:11px;line-height:30px">〜</span>
+        <input type="date" id="sa-dateto-shopify" style="font-size:12px;padding:4px 8px;border:1px solid var(--rule);border-radius:6px;flex:1">
+      </div>
+      <div class="upload-zone" id="sa-drop-shopify" onclick="document.getElementById('sa-file-shopify').click()" style="padding:10px;font-size:12px">
+        📂 CSVをドロップ or クリック
+        <div id="sa-label-shopify" style="font-size:11px;color:var(--mint);margin-top:2px"></div>
+      </div>
+      <input type="file" id="sa-file-shopify" accept=".csv" style="display:none" onchange="onSaFileSelect('shopify',this)">
+      <button class="btn btn-primary" style="width:100%;margin-top:6px;font-size:12px" onclick="uploadSalesData('shopify')">保存</button>
+    </div>
+
+    <!-- ZOZO -->
+    <div class="card" style="padding:14px">
+      <div style="font-size:12px;font-weight:700;margin-bottom:8px">🛍 ZOZO</div>
+      <div id="sa-date-display-zozo" style="font-size:11px;color:var(--muted);margin-bottom:6px;min-height:18px"></div>
+      <div class="upload-zone" id="sa-drop-zozo" onclick="document.getElementById('sa-file-zozo').click()" style="padding:10px;font-size:12px">
+        📂 CSVをドロップ or クリック
+        <div id="sa-label-zozo" style="font-size:11px;color:var(--mint);margin-top:2px"></div>
+      </div>
+      <input type="file" id="sa-file-zozo" accept=".csv" style="display:none" onchange="onSaFileSelect('zozo',this)">
+      <button class="btn btn-primary" style="width:100%;margin-top:6px;font-size:12px" onclick="uploadSalesData('zozo')">保存</button>
+    </div>
+
+    <!-- 楽天 -->
+    <div class="card" style="padding:14px">
+      <div style="font-size:12px;font-weight:700;margin-bottom:8px">🅡 楽天</div>
+      <div id="sa-date-display-rakuten" style="font-size:11px;color:var(--muted);margin-bottom:6px;min-height:18px"></div>
+      <div class="upload-zone" id="sa-drop-rakuten" onclick="document.getElementById('sa-file-rakuten').click()" style="padding:10px;font-size:12px">
+        📂 CSVをドロップ or クリック
+        <div id="sa-label-rakuten" style="font-size:11px;color:var(--mint);margin-top:2px"></div>
+      </div>
+      <input type="file" id="sa-file-rakuten" accept=".csv" style="display:none" onchange="onSaFileSelect('rakuten',this)">
+      <button class="btn btn-primary" style="width:100%;margin-top:6px;font-size:12px" onclick="uploadSalesData('rakuten')">保存</button>
+    </div>
+
+    <!-- Amazon -->
+    <div class="card" style="padding:14px">
+      <div style="font-size:12px;font-weight:700;margin-bottom:8px">📦 Amazon</div>
+      <div id="sa-date-display-amazon" style="font-size:11px;color:var(--muted);margin-bottom:6px;min-height:18px"></div>
+      <div class="upload-zone" id="sa-drop-amazon" onclick="document.getElementById('sa-file-amazon').click()" style="padding:10px;font-size:12px">
+        📂 TSVをドロップ or クリック
+        <div id="sa-label-amazon" style="font-size:11px;color:var(--mint);margin-top:2px"></div>
+      </div>
+      <input type="file" id="sa-file-amazon" accept=".txt,.tsv,.csv" style="display:none" onchange="onSaFileSelect('amazon',this)">
+      <button class="btn btn-primary" style="width:100%;margin-top:6px;font-size:12px" onclick="uploadSalesData('amazon')">保存</button>
+    </div>
+
+  </div>
+
+  <!-- 集計エリア -->
+  <div class="card">
+    <div class="toolbar" style="flex-wrap:wrap;gap:10px">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <span style="font-size:12px;font-weight:700">期間</span>
+        <input type="date" id="sa-from" style="font-size:12px;padding:4px 8px;border:1px solid var(--rule);border-radius:6px">
+        <span style="font-size:12px">〜</span>
+        <input type="date" id="sa-to" style="font-size:12px;padding:4px 8px;border:1px solid var(--rule);border-radius:6px">
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <button class="btn btn-ghost btn-sm sa-ch-btn active" data-ch="all" onclick="setSaChannel('all')">合算</button>
+        <button class="btn btn-ghost btn-sm sa-ch-btn" data-ch="smaregi" onclick="setSaChannel('smaregi')">店舗</button>
+        <button class="btn btn-ghost btn-sm sa-ch-btn" data-ch="shopify" onclick="setSaChannel('shopify')">オンライン</button>
+        <button class="btn btn-ghost btn-sm sa-ch-btn" data-ch="zozo" onclick="setSaChannel('zozo')">ZOZO</button>
+        <button class="btn btn-ghost btn-sm sa-ch-btn" data-ch="rakuten" onclick="setSaChannel('rakuten')">楽天</button>
+        <button class="btn btn-ghost btn-sm sa-ch-btn" data-ch="amazon" onclick="setSaChannel('amazon')">Amazon</button>
+      </div>
+      <div class="spacer"></div>
+      <button class="btn btn-primary" onclick="fetchSalesRanking()">集計する</button>
+    </div>
+
+    <!-- ランキング表示 -->
+    <div id="sa-loading" style="display:none;text-align:center;padding:30px;color:var(--muted);font-size:13px">集計中...</div>
+    <div id="sa-empty" style="display:none;text-align:center;padding:30px;color:var(--muted);font-size:13px">
+      <div style="font-size:24px;margin-bottom:8px">📭</div>
+      該当期間のデータがありません
+    </div>
+    <div id="sa-ranking"></div>
+  </div>
+</div>
+
+<script>
+// ============================================================
+// 売上分析 JS（新規追加）
+// ============================================================
+
+const saFiles = {}; // チャネル → File
+let saChannel = 'all';
+
+// 今日の日付をデフォルトにセット
+(function initSaDates() {
+  const today = new Date().toISOString().slice(0,10);
+  const monthAgo = new Date(Date.now() - 30*24*60*60*1000).toISOString().slice(0,10);
+  document.getElementById('sa-datefrom-smaregi').value = monthAgo;
+  document.getElementById('sa-dateto-smaregi').value = today;
+  document.getElementById('sa-datefrom-shopify').value = monthAgo;
+  document.getElementById('sa-dateto-shopify').value = today;
+  document.getElementById('sa-from').value = monthAgo;
+  document.getElementById('sa-to').value = today;
+})();
+
+function onSaFileSelect(channel, input) {
+  const file = input.files[0];
+  if (!file) return;
+  saFiles[channel] = file;
+  document.getElementById(`sa-label-${channel}`).textContent = file.name;
+  // ZOZO・楽天・Amazonは日付を自動検出
+  if (['zozo','rakuten','amazon'].includes(channel)) {
+    detectSaDate(channel, file);
+  }
+}
+
+// CSVから日付を自動検出してdisplayに表示、saAutoDateに保存
+const saAutoDate = {};
+async function detectSaDate(channel, file) {
+  const displayEl = document.getElementById(`sa-date-display-${channel}`);
+  if (displayEl) displayEl.textContent = '📅 日付検出中...';
+  try {
+    const text = await readSaFile(file);
+    const lines = text.replace(/^\uFEFF/,'').split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
+    let dates = new Set();
+
+    if (channel === 'zozo') {
+      // ヘッダー行を探して「注文日」列を取得
+      const startIdx = lines[0].includes('商品名') ? 0 : 1;
+      const headers = lines[startIdx].split('\t').map(h=>h.replace(/^"|"$/g,'').trim());
+      let idx = headers.indexOf('注文日');
+      // タブ区切りで見つからなければカンマ区切りで再試行
+      if (idx < 0) {
+        const hc = lines[startIdx].split(',').map(h=>h.replace(/^"|"$/g,'').trim());
+        idx = hc.indexOf('注文日');
+        if (idx >= 0) {
+          lines.slice(startIdx+1).forEach(l => {
+            const cols = l.split(',');
+            const d = (cols[idx]||'').trim();
+            if (/^\d{8}$/.test(d)) {
+              dates.add(`${d.slice(0,4)}-${d.slice(4,6)}-${d.slice(6,8)}`);
+            }
+          });
+        }
+      } else {
+        lines.slice(startIdx+1).forEach(l => {
+          const cols = l.split('\t');
+          const d = (cols[idx]||'').trim();
+          if (/^\d{8}$/.test(d)) {
+            dates.add(`${d.slice(0,4)}-${d.slice(4,6)}-${d.slice(6,8)}`);
+          }
+        });
+      }
+
+    } else if (channel === 'rakuten') {
+      // 2行目がヘッダー
+      const headerLine = lines.length > 1 ? lines[1] : lines[0];
+      const headers = headerLine.split('\t').map(h=>h.replace(/^"|"$/g,'').trim());
+      let idx = headers.indexOf('対象日');
+      if (idx < 0) {
+        const hc = headerLine.split(',').map(h=>h.replace(/^"|"$/g,'').trim());
+        idx = hc.indexOf('対象日');
+        if (idx >= 0) {
+          lines.slice(2).forEach(l => {
+            const cols = l.split(',');
+            const d = (cols[idx]||'').replace(/\//g,'-').trim();
+            const m = d.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+            if (m) dates.add(`${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`);
+          });
+        }
+      } else {
+        lines.slice(2).forEach(l => {
+          const cols = l.split('\t');
+          const d = (cols[idx]||'').replace(/\//g,'-').trim();
+          const m = d.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+          if (m) dates.add(`${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`);
+        });
+      }
+
+    } else if (channel === 'amazon') {
+      const headers = lines[0].split('\t').map(h=>h.trim());
+      const idx = headers.indexOf('purchase-date');
+      if (idx >= 0) {
+        lines.slice(1).forEach(l => {
+          const cols = l.split('\t');
+          const d = (cols[idx]||'').trim().slice(0,10); // "2026-05-21"
+          if (/^\d{4}-\d{2}-\d{2}$/.test(d)) dates.add(d);
+        });
+      }
+    }
+
+    const sorted = Array.from(dates).sort();
+    if (sorted.length === 0) {
+      if (displayEl) displayEl.textContent = '⚠️ 日付を検出できませんでした';
+      return;
+    }
+    const from = sorted[0], to = sorted[sorted.length-1];
+    saAutoDate[channel] = { from, to };
+    if (displayEl) {
+      displayEl.textContent = from === to
+        ? `📅 ${from}`
+        : `📅 ${from} 〜 ${to}`;
+      displayEl.style.color = 'var(--mint)';
+    }
+  } catch(e) {
+    if (displayEl) displayEl.textContent = '⚠️ 日付検出エラー';
+  }
+}
+
+function setSaChannel(ch) {
+  saChannel = ch;
+  document.querySelectorAll('.sa-ch-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.ch === ch);
+  });
+}
+
+// CSVパース：スマレジ売上
+function parseSaSmaregiCsv(text) {
+  const lines = text.replace(/^\uFEFF/,'').split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
+  if (lines.length < 2) return [];
+  const headers = lines[0].split(',').map(h=>h.replace(/^"|"$/g,'').trim());
+  const idx = {
+    itemNo: headers.indexOf('品番'),
+    name:   headers.indexOf('商品名'),
+    color:  headers.indexOf('カラー'),
+    size:   headers.indexOf('サイズ'),
+    qty:    headers.indexOf('販売点数'),
+  };
+  return lines.slice(1).map(line => {
+    const cols = line.split(',').map(c=>c.replace(/^"|"$/g,'').trim());
+    return {
+      itemNo: cols[idx.itemNo]||'',
+      name:   cols[idx.name]||'',
+      color:  cols[idx.color]||'',
+      size:   cols[idx.size]||'',
+      qty:    parseInt(cols[idx.qty])||0,
+    };
+  }).filter(r => r.qty > 0);
+}
+
+// CSVパース：Shopify（Product title + Quantity ordered）
+function parseSaShopifyCsv(text) {
+  const lines = text.replace(/^\uFEFF/,'').split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
+  if (lines.length < 2) return [];
+  const headers = lines[0].split(',').map(h=>h.replace(/^"|"$/g,'').trim());
+  const nameIdx = headers.findIndex(h => h.toLowerCase().includes('product title') || h.toLowerCase().includes('商品名'));
+  const qtyIdx  = headers.findIndex(h => h.toLowerCase().includes('quantity ordered') && !h.toLowerCase().includes('previous'));
+  if (nameIdx < 0 || qtyIdx < 0) return [];
+  return lines.slice(1).map(line => {
+    const cols = line.split(',').map(c=>c.replace(/^"|"$/g,'').trim());
+    return { itemNo:'', name: cols[nameIdx]||'', color:'', size:'', qty: parseInt(cols[qtyIdx])||0 };
+  }).filter(r => r.qty > 0);
+}
+
+// CSVパース：ZOZO（商品名・カラー・サイズ・注文数）
+function parseSaZozoCsv(text) {
+  const lines = text.replace(/^\uFEFF/,'').split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
+  if (lines.length < 2) return [];
+  // 1行目がヘッダーでない場合はスキップ
+  const startIdx = lines[0].includes('商品名') ? 0 : 1;
+  const headers = lines[startIdx].split(',').map(h=>h.replace(/^"|"$/g,'').trim());
+  const idx = {
+    itemNo: headers.indexOf('CS品番'),
+    name:   headers.indexOf('商品名'),
+    color:  headers.indexOf('カラー'),
+    size:   headers.indexOf('サイズ'),
+    qty:    headers.indexOf('注文数'),
+  };
+  return lines.slice(startIdx+1).map(line => {
+    const cols = line.split(',').map(c=>c.replace(/^"|"$/g,'').trim());
+    return {
+      itemNo: cols[idx.itemNo]||'',
+      name:   cols[idx.name]||'',
+      color:  cols[idx.color]||'',
+      size:   cols[idx.size]||'',
+      qty:    parseInt(cols[idx.qty])||0,
+    };
+  }).filter(r => r.qty > 0);
+}
+
+// CSVパース：楽天（商品名・カラー名・サイズ名・売上数）
+function parseSaRakutenCsv(text) {
+  const lines = text.replace(/^\uFEFF/,'').split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
+  // ヘッダー行を探す
+  const headerIdx = lines.findIndex(l => l.includes('商品名') && l.includes('売上数'));
+  if (headerIdx < 0) return [];
+  const headers = lines[headerIdx].split(',').map(h=>h.replace(/^"|"$/g,'').trim());
+  const idx = {
+    name:  headers.indexOf('商品名'),
+    color: headers.indexOf('カラー名'),
+    size:  headers.indexOf('サイズ名'),
+    qty:   headers.indexOf('売上数'),
+  };
+  return lines.slice(headerIdx+1).map(line => {
+    const cols = line.split(',').map(c=>c.replace(/^"|"$/g,'').trim());
+    return {
+      itemNo: '',
+      name:   cols[idx.name]||'',
+      color:  cols[idx.color]||'',
+      size:   cols[idx.size]||'',
+      qty:    parseInt(cols[idx.qty])||0,
+    };
+  }).filter(r => r.qty > 0);
+}
+
+// TSVパース：Amazon（product-name・SKU先頭7桁・quantity）
+function parseSaAmazonTsv(text) {
+  const lines = text.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
+  if (lines.length < 2) return [];
+  const headers = lines[0].split('\t').map(h=>h.trim());
+  const nameIdx   = headers.indexOf('product-name');
+  const skuIdx    = headers.indexOf('sku');
+  const qtyIdx    = headers.indexOf('quantity');
+  const statusIdx = headers.indexOf('item-status');
+  if (nameIdx < 0 || qtyIdx < 0) return [];
+  const map = {};
+  lines.slice(1).forEach(line => {
+    const cols = line.split('\t').map(c=>c.trim());
+    if (statusIdx >= 0 && cols[statusIdx] === 'Cancelled') return;
+    const qty = parseInt(cols[qtyIdx])||0;
+    if (qty <= 0) return;
+    const sku    = cols[skuIdx]||'';
+    const itemNo = sku.replace(/[^0-9]/g,'').slice(0,7); // 先頭7桁の数字
+    const key    = itemNo || cols[nameIdx]||'';
+    if (!map[key]) map[key] = { itemNo, name: cols[nameIdx]||'', color:'', size:'', qty:0 };
+    map[key].qty += qty;
+  });
+  return Object.values(map).filter(r => r.qty > 0);
+}
+
+// ファイルをShift-JISまたはUTF-8で読む
+function readSaFile(file) {
+  return new Promise((resolve, reject) => {
+    // まずUTF-8で試みる
+    const r1 = new FileReader();
+    r1.onload = e => {
+      const text = e.target.result;
+      if (text.includes('???') || /[\uFFFD]/.test(text.slice(0,500))) {
+        // Shift-JISで再読
+        const r2 = new FileReader();
+        r2.onload = e2 => resolve(e2.target.result);
+        r2.onerror = reject;
+        r2.readAsText(file, 'Shift-JIS');
+      } else {
+        resolve(text);
+      }
+    };
+    r1.onerror = reject;
+    r1.readAsText(file, 'UTF-8');
+  });
+}
+
+// 売上データをGASに保存
+async function uploadSalesData(channel) {
+  const file = saFiles[channel];
+  if (!file) { toast('ファイルを選択してください', 'error'); return; }
+
+  let date = '', dateFrom = '', dateTo = '';
+  if (channel === 'shopify' || channel === 'smaregi') {
+    const prefix = channel === 'shopify' ? 'shopify' : 'smaregi';
+    dateFrom = document.getElementById(`sa-datefrom-${prefix}`).value;
+    dateTo   = document.getElementById(`sa-dateto-${prefix}`).value;
+    date     = dateFrom;
+    if (!dateFrom || !dateTo) { toast('期間を入力してください', 'error'); return; }
+  } else if (['zozo','rakuten','amazon'].includes(channel)) {
+    // CSVから自動取得した日付を使用
+    const auto = saAutoDate[channel];
+    if (!auto) { toast('ファイルを選択してください（日付を検出中）', 'error'); return; }
+    date     = auto.from;
+    dateFrom = auto.from;
+    dateTo   = auto.to;
+  } else {
+    date = document.getElementById(`sa-date-${channel}`).value;
+    if (!date) { toast('日付を入力してください', 'error'); return; }
+  }
+
+  if (!S.gasUrl) { toast('GAS URLが未設定です', 'error'); return; }
+
+  try {
+    toast('読み込み中...', 'info');
+    const text = await readSaFile(file);
+    let rows = [];
+    if (channel === 'smaregi') rows = parseSaSmaregiCsv(text);
+    else if (channel === 'shopify') rows = parseSaShopifyCsv(text);
+    else if (channel === 'zozo')    rows = parseSaZozoCsv(text);
+    else if (channel === 'rakuten') rows = parseSaRakutenCsv(text);
+    else if (channel === 'amazon')  rows = parseSaAmazonTsv(text);
+
+    if (!rows.length) { toast('有効なデータが見つかりませんでした', 'error'); return; }
+
+    const res = await fetch(S.gasUrl, {
+      method: 'POST',
+      body: JSON.stringify({ action: 'saveSalesData', payload: JSON.stringify({ channel, date, rows }) })
+    });
+    const json = await res.json();
+    if (json.ok) {
+      toast(`✅ ${json.saved}件保存しました（${channel} / ${date}）`, 'success');
+      document.getElementById(`sa-label-${channel}`).textContent = `✅ ${json.saved}件保存済`;
+    } else {
+      toast(`保存エラー: ${json.error}`, 'error');
+    }
+  } catch(e) {
+    toast(`エラー: ${e.message}`, 'error');
+  }
+}
+
+// ランキングを取得・表示
+async function fetchSalesRanking() {
+  const dateFrom = document.getElementById('sa-from').value;
+  const dateTo   = document.getElementById('sa-to').value;
+  if (!dateFrom || !dateTo) { toast('期間を入力してください', 'error'); return; }
+  if (!S.gasUrl) { toast('GAS URLが未設定です', 'error'); return; }
+
+  document.getElementById('sa-loading').style.display = 'block';
+  document.getElementById('sa-empty').style.display   = 'none';
+  document.getElementById('sa-ranking').innerHTML      = '';
+
+  try {
+    const res = await fetch(`${S.gasUrl}?action=getSalesData&dateFrom=${dateFrom}&dateTo=${dateTo}&channel=${saChannel}`);
+    const json = await res.json();
+    if (!json.ok) { toast(`取得エラー: ${json.error}`, 'error'); return; }
+
+    renderSaRanking(json.rows);
+  } catch(e) {
+    toast(`エラー: ${e.message}`, 'error');
+  } finally {
+    document.getElementById('sa-loading').style.display = 'none';
+  }
+}
+
+// ランキング描画
+function renderSaRanking(rows) {
+  const container = document.getElementById('sa-ranking');
+  if (!rows || !rows.length) {
+    document.getElementById('sa-empty').style.display = 'block';
+    return;
+  }
+
+  // 商品名＋カラーでグルーピング（Amazonは品番、Shopifyは商品名のみ）
+  const groupMap = {};
+  rows.forEach(r => {
+    const groupKey = r.color ? `${r.name}__${r.color}` : r.name;
+    const label    = r.color ? `${r.name}　${r.color}` : r.name;
+    if (!groupMap[groupKey]) groupMap[groupKey] = { label, total: 0, sizes: {} };
+    groupMap[groupKey].total += r.qty;
+    if (r.size) {
+      groupMap[groupKey].sizes[r.size] = (groupMap[groupKey].sizes[r.size]||0) + r.qty;
+    }
+  });
+
+  const sorted = Object.entries(groupMap).sort((a,b) => b[1].total - a[1].total);
+  const maxQty = sorted[0]?.[1].total || 1;
+
+  container.innerHTML = sorted.map(([key, g], i) => {
+    const rank    = i + 1;
+    const pct     = Math.round(g.total / maxQty * 100);
+    const hasSizes = Object.keys(g.sizes).length > 0;
+    const sizeRows = Object.entries(g.sizes)
+      .sort((a,b) => b[1]-a[1])
+      .map(([sz, qty]) => `
+        <div style="display:flex;align-items:center;gap:8px;padding:4px 0">
+          <div style="font-size:11px;color:var(--muted);width:120px;flex-shrink:0">${sz}</div>
+          <div style="flex:1;height:6px;background:var(--rule);border-radius:3px">
+            <div style="height:100%;width:${Math.round(qty/g.total*100)}%;background:var(--blue);border-radius:3px;opacity:0.5"></div>
+          </div>
+          <div style="font-size:12px;font-weight:700;width:40px;text-align:right">${qty}</div>
+        </div>`).join('');
+
+    const rankColor = rank === 1 ? '#f5a623' : rank === 2 ? '#aaa' : rank === 3 ? '#cd7f32' : 'var(--muted)';
+    const rankLabel = rank <= 3 ? ['🥇','🥈','🥉'][rank-1] : `${rank}`;
+
+    return `<div style="border-bottom:1px solid var(--rule);padding:12px 0">
+      <div style="display:flex;align-items:center;gap:10px;cursor:${hasSizes?'pointer':'default'}"
+           onclick="${hasSizes ? `toggleSaDetail('sa-detail-${i}')` : ''}">
+        <div style="font-size:${rank<=3?'18px':'13px'};font-weight:700;color:${rankColor};width:32px;text-align:center;flex-shrink:0">${rankLabel}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${g.label}</div>
+          <div style="margin-top:4px;height:8px;background:var(--rule);border-radius:4px">
+            <div style="height:100%;width:${pct}%;background:var(--blue);border-radius:4px;transition:width 0.3s"></div>
+          </div>
+        </div>
+        <div style="font-size:16px;font-weight:900;color:var(--blue);width:60px;text-align:right;flex-shrink:0">${g.total}<span style="font-size:10px;font-weight:400;color:var(--muted)">点</span></div>
+        ${hasSizes ? `<div style="font-size:14px;color:var(--muted)">▼</div>` : ''}
+      </div>
+      ${hasSizes ? `<div id="sa-detail-${i}" style="display:none;padding:8px 12px 4px 42px">${sizeRows}</div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+function toggleSaDetail(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.style.display = el.style.display === 'none' ? 'block' : 'none';
+}
+</script>
+
 </body>
 </html>
