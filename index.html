@@ -5384,7 +5384,7 @@ async function uploadSalesData(channel) {
     if (!date) { toast('日付を入力してください', 'error'); return; }
   }
 
-  if (!S.gasUrl) { toast('GAS URLが未設定です', 'error'); return; }
+  if (!GAS_URL) { toast('GAS URLが未設定です', 'error'); return; }
 
   try {
     toast('読み込み中...', 'info');
@@ -5398,7 +5398,7 @@ async function uploadSalesData(channel) {
 
     if (!rows.length) { toast('有効なデータが見つかりませんでした', 'error'); return; }
 
-    const res = await fetch(S.gasUrl, {
+    const res = await fetch(GAS_URL, {
       method: 'POST',
       body: JSON.stringify({ action: 'saveSalesData', payload: JSON.stringify({ channel, date, rows }) })
     });
@@ -5419,14 +5419,14 @@ async function fetchSalesRanking() {
   const dateFrom = document.getElementById('sa-from').value;
   const dateTo   = document.getElementById('sa-to').value;
   if (!dateFrom || !dateTo) { toast('期間を入力してください', 'error'); return; }
-  if (!S.gasUrl) { toast('GAS URLが未設定です', 'error'); return; }
+  if (!GAS_URL) { toast('GAS URLが未設定です', 'error'); return; }
 
   document.getElementById('sa-loading').style.display = 'block';
   document.getElementById('sa-empty').style.display   = 'none';
   document.getElementById('sa-ranking').innerHTML      = '';
 
   try {
-    const res = await fetch(`${S.gasUrl}?action=getSalesData&dateFrom=${dateFrom}&dateTo=${dateTo}&channel=${saChannel}`);
+    const res = await fetch(`${GAS_URL}?action=getSalesData&dateFrom=${dateFrom}&dateTo=${dateTo}&channel=${saChannel}`);
     const json = await res.json();
     if (!json.ok) { toast(`取得エラー: ${json.error}`, 'error'); return; }
 
