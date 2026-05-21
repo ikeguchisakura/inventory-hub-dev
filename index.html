@@ -5262,58 +5262,73 @@ function parseSaShopifyCsv(text) {
   }).filter(r => r.qty > 0);
 }
 
-// CSVパース：ZOZO（商品名・カラー・サイズ・注文数）
+// CSVパース：ZOZO（商品名・カラー・サイズ・注文数・注文日）
 function parseSaZozoCsv(text) {
   const lines = text.replace(/^\uFEFF/,'').split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
   if (lines.length < 2) return [];
-  // 1行目がヘッダーでない場合はスキップ
   const startIdx = lines[0].includes('商品名') ? 0 : 1;
-  const headers = lines[startIdx].split(',').map(h=>h.replace(/^"|"$/g,'').trim());
+  // タブ区切り優先、なければカンマ区切り
+  const sep = lines[startIdx].includes('\t') ? '\t' : ',';
+  const headers = lines[startIdx].split(sep).map(h=>h.replace(/^"|"$/g,'').trim());
   const idx = {
     itemNo: headers.indexOf('CS品番'),
     name:   headers.indexOf('商品名'),
     color:  headers.indexOf('カラー'),
     size:   headers.indexOf('サイズ'),
     qty:    headers.indexOf('注文数'),
+    date:   headers.indexOf('注文日'),
   };
   return lines.slice(startIdx+1).map(line => {
-    const cols = line.split(',').map(c=>c.replace(/^"|"$/g,'').trim());
+    const cols = line.split(sep).map(c=>c.replace(/^"|"$/g,'').trim());
+    const rawDate = cols[idx.date] || '';
+    // 20260520 → 2026-05-20
+    const date = /^\d{8}$/.test(rawDate)
+      ? `${rawDate.slice(0,4)}-${rawDate.slice(4,6)}-${rawDate.slice(6,8)}`
+      : rawDate;
     return {
       itemNo: cols[idx.itemNo]||'',
       name:   cols[idx.name]||'',
       color:  cols[idx.color]||'',
       size:   cols[idx.size]||'',
       qty:    parseInt(cols[idx.qty])||0,
+      date,
     };
   }).filter(r => r.qty > 0);
 }
 
-// CSVパース：楽天（商品名・カラー名・サイズ名・売上数）
+// CSVパース：楽天（商品名・カラー名・サイズ名・売上数・対象日）
 function parseSaRakutenCsv(text) {
   const lines = text.replace(/^\uFEFF/,'').split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
-  // ヘッダー行を探す
+  // ヘッダー行を探す（タブ区切り優先）
   const headerIdx = lines.findIndex(l => l.includes('商品名') && l.includes('売上数'));
   if (headerIdx < 0) return [];
-  const headers = lines[headerIdx].split(',').map(h=>h.replace(/^"|"$/g,'').trim());
+  const sep = lines[headerIdx].includes('\t') ? '\t' : ',';
+  const headers = lines[headerIdx].split(sep).map(h=>h.replace(/^"|"$/g,'').trim());
   const idx = {
     name:  headers.indexOf('商品名'),
     color: headers.indexOf('カラー名'),
     size:  headers.indexOf('サイズ名'),
     qty:   headers.indexOf('売上数'),
+    date:  headers.indexOf('対象日'),
   };
   return lines.slice(headerIdx+1).map(line => {
-    const cols = line.split(',').map(c=>c.replace(/^"|"$/g,'').trim());
+    const cols = line.split(sep).map(c=>c.replace(/^"|"$/g,'').trim());
+    const rawDate = cols[idx.date] || '';
+    // 2026/5/20 → 2026-05-20
+    const m = rawDate.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})$/);
+    const date = m ? `${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}` : rawDate;
     return {
       itemNo: '',
       name:   cols[idx.name]||'',
       color:  cols[idx.color]||'',
       size:   cols[idx.size]||'',
       qty:    parseInt(cols[idx.qty])||0,
+      date,
     };
   }).filter(r => r.qty > 0);
 }
 
-// TSVパース：Amazon（product-name・SKU先頭7桁・quantity）
+// TSVパース：Amazon（product-name・SKU先頭7桁・quantity・purchase-date）
 function parseSaAmazonTsv(text) {
   const lines = text.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
   if (lines.length < 2) return [];
@@ -5322,7 +5337,9 @@ function parseSaAmazonTsv(text) {
   const skuIdx    = headers.indexOf('sku');
   const qtyIdx    = headers.indexOf('quantity');
   const statusIdx = headers.indexOf('item-status');
+  const dateIdx   = headers.indexOf('purchase-date');
   if (nameIdx < 0 || qtyIdx < 0) return [];
+  // 日付ごと×SKUごとに集計
   const map = {};
   lines.slice(1).forEach(line => {
     const cols = line.split('\t').map(c=>c.trim());
@@ -5330,9 +5347,10 @@ function parseSaAmazonTsv(text) {
     const qty = parseInt(cols[qtyIdx])||0;
     if (qty <= 0) return;
     const sku    = cols[skuIdx]||'';
-    const itemNo = sku.replace(/[^0-9]/g,'').slice(0,7); // 先頭7桁の数字
-    const key    = itemNo || cols[nameIdx]||'';
-    if (!map[key]) map[key] = { itemNo, name: cols[nameIdx]||'', color:'', size:'', qty:0 };
+    const itemNo = sku.replace(/[^0-9]/g,'').slice(0,7);
+    const rawDate = dateIdx >= 0 ? (cols[dateIdx]||'').slice(0,10) : '';
+    const key    = `${rawDate}__${itemNo || cols[nameIdx]||''}`;
+    if (!map[key]) map[key] = { itemNo, name: cols[nameIdx]||'', color:'', size:'', qty:0, date: rawDate };
     map[key].qty += qty;
   });
   return Object.values(map).filter(r => r.qty > 0);
@@ -5400,14 +5418,16 @@ async function uploadSalesData(channel) {
 
     const res = await fetch(GAS_URL, {
       method: 'POST',
-      body: JSON.stringify({ action: 'saveSalesData', payload: JSON.stringify({ channel, date, rows }) })
+      body: JSON.stringify({ action: 'saveSalesData', payload: JSON.stringify({ channel, date, dateFrom, dateTo, rows }) })
     });
     const json = await res.json();
     if (json.ok) {
-      toast(`✅ ${json.saved}件保存しました（${channel} / ${date}）`, 'success');
-      document.getElementById(`sa-label-${channel}`).textContent = `✅ ${json.saved}件保存済`;
+      const saved = json.data ? json.data.saved : json.saved;
+      const dateLabel = dateFrom && dateTo && dateFrom !== dateTo ? `${dateFrom}〜${dateTo}` : date;
+      toast(`✅ ${saved}件保存しました（${channel} / ${dateLabel}）`, 'success');
+      document.getElementById(`sa-label-${channel}`).textContent = `✅ ${saved}件保存済`;
     } else {
-      toast(`保存エラー: ${json.error}`, 'error');
+      toast(`保存エラー: ${json.error || json.data?.error}`, 'error');
     }
   } catch(e) {
     toast(`エラー: ${e.message}`, 'error');
