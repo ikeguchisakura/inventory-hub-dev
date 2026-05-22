@@ -1496,14 +1496,16 @@ function renderReserves() {
       dates.map(d => `<option value="${d}" ${d===cur?'selected':''}>${d}</option>`).join('');
   }
 
-  // csSku（自社品番）でグルーピング
+  // csSku + deliveryDate でグルーピング（納期別に別行表示）
   const groupMap = {};
   filtered.forEach(r => {
-    const key = r.csSku || `${r.name}__${r.color}__${r.size}`;
+    const skuKey = r.csSku || `${r.name}__${r.color}__${r.size}`;
+    const key = `${skuKey}__${r.deliveryDate || ''}`;
     if (!groupMap[key]) groupMap[key] = {
-      csSku: r.csSku, name: r.name, color: r.color, size: r.size, zozo: null, rakuten: null
+      csSku: r.csSku, name: r.name, color: r.color, size: r.size,
+      deliveryDate: r.deliveryDate || '', zozo: null, rakuten: null
     };
-    if (r.channel === 'ZOZO') { groupMap[key].zozo = r; groupMap[key].csSku = r.csSku; }
+    if (r.channel === 'ZOZO') { groupMap[key].zozo = r; groupMap[key].csSku = r.csSku; groupMap[key].deliveryDate = r.deliveryDate || ''; }
     if (r.channel === '楽天') groupMap[key].rakuten = r;
   });
 
@@ -1550,7 +1552,7 @@ function renderReserves() {
     const totalOrder = (z?.orderQty||0) + (r?.orderQty||0);
     const zRemCls = zRemain !== null ? (zRemain <= 0 ? 'sc-out' : zRemain <= 5 ? 'sc-low' : 'sc-ok') : '';
     const rRemCls = rRemain !== null ? (rRemain <= 0 ? 'sc-out' : rRemain <= 5 ? 'sc-low' : 'sc-ok') : '';
-    const deliveryDate = z?.deliveryDate || '';
+    const deliveryDate = g.deliveryDate || z?.deliveryDate || r?.deliveryDate || '';
     return `<tr>
       <td style="${tdBase}font-family:'DM Mono',monospace;font-size:11px;font-weight:600;white-space:nowrap">${g.csSku||'—'}</td>
       <td style="${tdBase}font-weight:600;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${g.name}">${g.name||'—'}</td>
@@ -1576,12 +1578,13 @@ function exportReserveCsv() {
   if (!S.reserves || S.reserves.length === 0) {
     toast('予約データがありません', 'warn'); return;
   }
-  // csSku（自社品番）でグルーピング
+  // csSku + deliveryDate でグルーピング（納期別に別行）
   const groupMap = {};
   S.reserves.forEach(r => {
-    const key = r.csSku || `${r.name}__${r.color}__${r.size}`;
-    if (!groupMap[key]) groupMap[key] = { csSku: r.csSku, name: r.name, color: r.color, size: r.size, zozo: null, rakuten: null };
-    if (r.channel === 'ZOZO') { groupMap[key].zozo = r; groupMap[key].csSku = r.csSku; }
+    const skuKey = r.csSku || `${r.name}__${r.color}__${r.size}`;
+    const key = `${skuKey}__${r.deliveryDate || ''}`;
+    if (!groupMap[key]) groupMap[key] = { csSku: r.csSku, name: r.name, color: r.color, size: r.size, deliveryDate: r.deliveryDate || '', zozo: null, rakuten: null };
+    if (r.channel === 'ZOZO') { groupMap[key].zozo = r; groupMap[key].csSku = r.csSku; groupMap[key].deliveryDate = r.deliveryDate || ''; }
     if (r.channel === '楽天') groupMap[key].rakuten = r;
   });
   // S.productsから自社の商品名・カラー・サイズで上書き
@@ -3132,13 +3135,16 @@ const EXT_CHANNELS = {
       'このツールにファイルを取込',
     ],
     fixedMapping: {
-      sku:   'CS品番',
-      jan:   null,
-      name:  '商品名',
-      color: 'カラー',
-      size:  'サイズ',
-      price: 'プロパー価格（税抜）',
-      stock: '販売可能数合計',
+      sku:          'CS品番',
+      jan:          null,
+      name:         '商品名',
+      color:        'カラー',
+      size:         'サイズ',
+      price:        'プロパー価格（税抜）',
+      stock:        '販売可能数合計',
+      reserveQty:   '予約受付数',
+      orderQty:     '注文数',
+      deliveryDate: 'お届け予定(初回納期)',
     },
     patterns: {
       sku:   ['cs品番','CS品番'],
@@ -3422,15 +3428,18 @@ function renderExtPreview() {
   const rsvQtyIdx   = extChannel === 'rakuten' ? extColumns.findIndex(h => h.trim() === '未入荷数') : -1;
   const orderQtyIdx = extChannel === 'rakuten' ? extColumns.findIndex(h => h.trim() === '受注残数') : -1;
   window._extImportData = extParsedRows.map(row => ({
-    sku:        getExt(row, 'sku'),
-    jan:        getExt(row, 'jan'),
-    name:       getExt(row, 'name'),
-    color:      getExt(row, 'color') || extractColor(getExt(row, 'name')),
-    size:       getExt(row, 'size')  || extractSize(getExt(row, 'name')),
-    price:      Number(getExt(row, 'price').replace(/[,，￥¥\s　]/g, '')) || 0,
-    stock:      getExtNum(row, 'stock'),
-    reserveQty: rsvQtyIdx   >= 0 ? (parseInt(row[rsvQtyIdx])   || 0) : 0,
-    rOrderQty:  orderQtyIdx >= 0 ? (parseInt(row[orderQtyIdx]) || 0) : 0,
+    sku:          getExt(row, 'sku'),
+    jan:          getExt(row, 'jan'),
+    name:         getExt(row, 'name'),
+    color:        getExt(row, 'color') || extractColor(getExt(row, 'name')),
+    size:         getExt(row, 'size')  || extractSize(getExt(row, 'name')),
+    price:        Number(getExt(row, 'price').replace(/[,，￥¥\s　]/g, '')) || 0,
+    stock:        getExtNum(row, 'stock'),
+    reserveQty:   extChannel === 'zozo'    ? (getExtNum(row, 'reserveQty') || 0)
+                : rsvQtyIdx   >= 0         ? (parseInt(row[rsvQtyIdx])   || 0) : 0,
+    rOrderQty:    orderQtyIdx >= 0 ? (parseInt(row[orderQtyIdx]) || 0) : 0,
+    orderQty:     extChannel === 'zozo'    ? (getExtNum(row, 'orderQty') || 0) : 0,
+    deliveryDate: extChannel === 'zozo'    ? (getExt(row, 'deliveryDate') || '') : '',
   }));
 }
 
@@ -3500,6 +3509,26 @@ function extImport() {
     localStorage.setItem('hub_products', JSON.stringify(S.products));
     // 照合結果をトーストに追加表示
     window._matchResult = { matched, unmatched, total: data.length };
+  }
+
+  // ZOZO：納期ごとに別レコードでS.reservesに追加
+  if (extChannel === 'zozo') {
+    const zozoReserves = data
+      .filter(d => d.reserveQty > 0 || d.orderQty > 0)
+      .map(d => ({
+        channel:      'ZOZO',
+        csSku:        d.sku || '',
+        jan:          d.jan || '',
+        name:         d.name || '',
+        color:        d.color || '',
+        size:         d.size || '',
+        reserveQty:   d.reserveQty,
+        orderQty:     d.orderQty,
+        deliveryDate: d.deliveryDate || '',
+      }));
+    S.reserves = (S.reserves || []).filter(r => r.channel !== 'ZOZO');
+    S.reserves.push(...zozoReserves);
+    console.log('[ZOZO予約] 追加件数:', zozoReserves.length);
   }
 
   // 楽天の場合、S.reservesに予約データを追加（未入荷数>0 または受注残数>0 のもののみ）
@@ -4995,11 +5024,7 @@ function initSiPage() {
     <!-- スマレジ -->
     <div class="card" style="padding:14px">
       <div style="font-size:12px;font-weight:700;margin-bottom:8px">🏪 スマレジ（店舗）</div>
-      <div style="display:flex;gap:6px;margin-bottom:6px">
-        <input type="date" id="sa-datefrom-smaregi" style="font-size:12px;padding:4px 8px;border:1px solid var(--rule);border-radius:6px;flex:1">
-        <span style="font-size:11px;line-height:30px">〜</span>
-        <input type="date" id="sa-dateto-smaregi" style="font-size:12px;padding:4px 8px;border:1px solid var(--rule);border-radius:6px;flex:1">
-      </div>
+      <div id="sa-date-display-smaregi" style="font-size:11px;color:var(--muted);margin-bottom:6px;min-height:18px"></div>
       <div class="upload-zone" id="sa-drop-smaregi" onclick="document.getElementById('sa-file-smaregi').click()" style="padding:10px;font-size:12px">
         📂 CSVをドロップ or クリック
         <div id="sa-label-smaregi" style="font-size:11px;color:var(--mint);margin-top:2px"></div>
@@ -5105,8 +5130,6 @@ let saChannel = 'all';
 (function initSaDates() {
   const today = new Date().toISOString().slice(0,10);
   const monthAgo = new Date(Date.now() - 30*24*60*60*1000).toISOString().slice(0,10);
-  document.getElementById('sa-datefrom-smaregi').value = monthAgo;
-  document.getElementById('sa-dateto-smaregi').value = today;
   document.getElementById('sa-datefrom-shopify').value = monthAgo;
   document.getElementById('sa-dateto-shopify').value = today;
   document.getElementById('sa-from').value = monthAgo;
@@ -5118,9 +5141,11 @@ function onSaFileSelect(channel, input) {
   if (!file) return;
   saFiles[channel] = file;
   document.getElementById(`sa-label-${channel}`).textContent = file.name;
-  // ZOZO・楽天・Amazonは日付を自動検出
+  // ZOZO・楽天・Amazon・スマレジは日付を自動検出
   if (['zozo','rakuten','amazon'].includes(channel)) {
     detectSaDate(channel, file);
+  } else if (channel === 'smaregi') {
+    detectSaDateFromFilename(channel, file.name);
   }
 }
 
@@ -5130,7 +5155,7 @@ async function detectSaDate(channel, file) {
   const displayEl = document.getElementById(`sa-date-display-${channel}`);
   if (displayEl) displayEl.textContent = '📅 日付検出中...';
   try {
-    const text = await readSaFile(file);
+    const text = await readSaFile(file, channel === 'shopify' ? 'Shift-JIS' : null);
     const lines = text.replace(/^\uFEFF/,'').split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
     let dates = new Set();
 
@@ -5222,6 +5247,27 @@ function setSaChannel(ch) {
   document.querySelectorAll('.sa-ch-btn').forEach(b => {
     b.classList.toggle('active', b.dataset.ch === ch);
   });
+}
+
+// ファイル名から期間を検出（スマレジ用）
+// 例: 商品別売上(期間：20260501-20260521).csv
+function detectSaDateFromFilename(channel, filename) {
+  const displayEl = document.getElementById(`sa-date-display-${channel}`);
+  const m = filename.match(/(\d{8})[-～〜~](\d{8})/);
+  if (m) {
+    const fmt = s => `${s.slice(0,4)}-${s.slice(4,6)}-${s.slice(6,8)}`;
+    const from = fmt(m[1]), to = fmt(m[2]);
+    saAutoDate[channel] = { from, to };
+    if (displayEl) {
+      displayEl.textContent = from === to ? `📅 ${from}` : `📅 ${from} 〜 ${to}`;
+      displayEl.style.color = 'var(--mint)';
+    }
+  } else {
+    if (displayEl) {
+      displayEl.textContent = '⚠️ ファイル名から期間を検出できませんでした';
+      displayEl.style.color = 'var(--error, #e55)';
+    }
+  }
 }
 
 // CSVパース：スマレジ売上
@@ -5357,14 +5403,24 @@ function parseSaAmazonTsv(text) {
 }
 
 // ファイルをShift-JISまたはUTF-8で読む
-function readSaFile(file) {
+function readSaFile(file, forceEncoding) {
   return new Promise((resolve, reject) => {
+    if (forceEncoding) {
+      const r = new FileReader();
+      r.onload = e => resolve(e.target.result);
+      r.onerror = reject;
+      r.readAsText(file, forceEncoding);
+      return;
+    }
     // まずUTF-8で試みる
     const r1 = new FileReader();
     r1.onload = e => {
       const text = e.target.result;
-      if (text.includes('???') || /[\uFFFD]/.test(text.slice(0,500))) {
-        // Shift-JISで再読
+      // 文字化け検出：置換文字または高頻度の非ASCII連続
+      const sample = text.slice(0, 1000);
+      const garbled = (text.match(/\uFFFD/g)||[]).length > 2
+        || (sample.match(/[\x80-\x9F]/g)||[]).length > 5;
+      if (garbled) {
         const r2 = new FileReader();
         r2.onload = e2 => resolve(e2.target.result);
         r2.onerror = reject;
@@ -5384,13 +5440,12 @@ async function uploadSalesData(channel) {
   if (!file) { toast('ファイルを選択してください', 'error'); return; }
 
   let date = '', dateFrom = '', dateTo = '';
-  if (channel === 'shopify' || channel === 'smaregi') {
-    const prefix = channel === 'shopify' ? 'shopify' : 'smaregi';
-    dateFrom = document.getElementById(`sa-datefrom-${prefix}`).value;
-    dateTo   = document.getElementById(`sa-dateto-${prefix}`).value;
+  if (channel === 'shopify') {
+    dateFrom = document.getElementById('sa-datefrom-shopify').value;
+    dateTo   = document.getElementById('sa-dateto-shopify').value;
     date     = dateFrom;
     if (!dateFrom || !dateTo) { toast('期間を入力してください', 'error'); return; }
-  } else if (['zozo','rakuten','amazon'].includes(channel)) {
+  } else if (['zozo','rakuten','amazon','smaregi'].includes(channel)) {
     // CSVから自動取得した日付を使用
     const auto = saAutoDate[channel];
     if (!auto) { toast('ファイルを選択してください（日付を検出中）', 'error'); return; }
@@ -5406,7 +5461,7 @@ async function uploadSalesData(channel) {
 
   try {
     toast('読み込み中...', 'info');
-    const text = await readSaFile(file);
+    const text = await readSaFile(file, channel === 'shopify' ? 'Shift-JIS' : null);
     let rows = [];
     if (channel === 'smaregi') rows = parseSaSmaregiCsv(text);
     else if (channel === 'shopify') rows = parseSaShopifyCsv(text);
