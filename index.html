@@ -5036,11 +5036,7 @@ function initSiPage() {
     <!-- Shopify -->
     <div class="card" style="padding:14px">
       <div style="font-size:12px;font-weight:700;margin-bottom:8px">🌐 Shopify（オンライン）</div>
-      <div style="display:flex;gap:6px;margin-bottom:6px">
-        <input type="date" id="sa-datefrom-shopify" style="font-size:12px;padding:4px 8px;border:1px solid var(--rule);border-radius:6px;flex:1">
-        <span style="font-size:11px;line-height:30px">〜</span>
-        <input type="date" id="sa-dateto-shopify" style="font-size:12px;padding:4px 8px;border:1px solid var(--rule);border-radius:6px;flex:1">
-      </div>
+      <div id="sa-date-display-shopify" style="font-size:11px;color:var(--muted);margin-bottom:6px;min-height:18px"></div>
       <div class="upload-zone" id="sa-drop-shopify" onclick="document.getElementById('sa-file-shopify').click()" style="padding:10px;font-size:12px">
         📂 CSVをドロップ or クリック
         <div id="sa-label-shopify" style="font-size:11px;color:var(--mint);margin-top:2px"></div>
@@ -5130,8 +5126,7 @@ let saChannel = 'all';
 (function initSaDates() {
   const today = new Date().toISOString().slice(0,10);
   const monthAgo = new Date(Date.now() - 30*24*60*60*1000).toISOString().slice(0,10);
-  document.getElementById('sa-datefrom-shopify').value = monthAgo;
-  document.getElementById('sa-dateto-shopify').value = today;
+  // 日付はすべてCSV/ファイル名から自動検出
   document.getElementById('sa-from').value = monthAgo;
   document.getElementById('sa-to').value = today;
 })();
@@ -5141,8 +5136,8 @@ function onSaFileSelect(channel, input) {
   if (!file) return;
   saFiles[channel] = file;
   document.getElementById(`sa-label-${channel}`).textContent = file.name;
-  // ZOZO・楽天・Amazon・スマレジは日付を自動検出
-  if (['zozo','rakuten','amazon'].includes(channel)) {
+  // ZOZO・楽天・Amazon・Shopifyは日付を自動検出、スマレジはファイル名から検出
+  if (['zozo','rakuten','amazon','shopify'].includes(channel)) {
     detectSaDate(channel, file);
   } else if (channel === 'smaregi') {
     detectSaDateFromFilename(channel, file.name);
@@ -5155,7 +5150,7 @@ async function detectSaDate(channel, file) {
   const displayEl = document.getElementById(`sa-date-display-${channel}`);
   if (displayEl) displayEl.textContent = '📅 日付検出中...';
   try {
-    const text = await readSaFile(file, channel === 'shopify' ? 'Shift-JIS' : null);
+    const text = await readSaFile(file);
     const lines = text.replace(/^\uFEFF/,'').split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
     let dates = new Set();
 
@@ -5218,7 +5213,18 @@ async function detectSaDate(channel, file) {
       if (idx >= 0) {
         lines.slice(1).forEach(l => {
           const cols = l.split('\t');
-          const d = (cols[idx]||'').trim().slice(0,10); // "2026-05-21"
+          const d = (cols[idx]||'').trim().slice(0,10);
+          if (/^\d{4}-\d{2}-\d{2}$/.test(d)) dates.add(d);
+        });
+      }
+    } else if (channel === 'shopify') {
+      const sep = lines[0].includes('\t') ? '\t' : ',';
+      const headers = lines[0].split(sep).map(h=>h.trim());
+      const idx = headers.indexOf('Created at');
+      if (idx >= 0) {
+        lines.slice(1).forEach(l => {
+          const cols = l.split(sep);
+          const d = (cols[idx]||'').trim().slice(0,10);
           if (/^\d{4}-\d{2}-\d{2}$/.test(d)) dates.add(d);
         });
       }
@@ -5294,18 +5300,72 @@ function parseSaSmaregiCsv(text) {
   }).filter(r => r.qty > 0);
 }
 
-// CSVパース：Shopify（Product title + Quantity ordered）
+// CSVパース：Shopify注文エクスポート（タブ区切り）
+// 1注文が複数行にまたがる形式。Created at / Lineitem* 列を使用
 function parseSaShopifyCsv(text) {
-  const lines = text.replace(/^\uFEFF/,'').split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
+  const lines = text.replace(/^\uFEFF/,'').split(/\r?\n/).filter(l => l.trim());
   if (lines.length < 2) return [];
-  const headers = lines[0].split(',').map(h=>h.replace(/^"|"$/g,'').trim());
-  const nameIdx = headers.findIndex(h => h.toLowerCase().includes('product title') || h.toLowerCase().includes('商品名'));
-  const qtyIdx  = headers.findIndex(h => h.toLowerCase().includes('quantity ordered') && !h.toLowerCase().includes('previous'));
-  if (nameIdx < 0 || qtyIdx < 0) return [];
-  return lines.slice(1).map(line => {
-    const cols = line.split(',').map(c=>c.replace(/^"|"$/g,'').trim());
-    return { itemNo:'', name: cols[nameIdx]||'', color:'', size:'', qty: parseInt(cols[qtyIdx])||0 };
-  }).filter(r => r.qty > 0);
+
+  // タブ区切りかカンマ区切りか判定
+  const sep = lines[0].includes('\t') ? '\t' : ',';
+  const headers = lines[0].split(sep).map(h => h.replace(/^"|"$/g,'').trim());
+
+  const col = key => headers.indexOf(key);
+  const nameIdx     = col('Name');               // 注文番号 #99285
+  const createdIdx  = col('Created at');
+  const statusIdx   = col('Financial Status');
+  const itemQtyIdx  = col('Lineitem quantity');
+  const itemNameIdx = col('Lineitem name');
+  const itemSkuIdx  = col('Lineitem sku');
+  const cancelIdx   = col('Cancelled at');
+
+  if (itemQtyIdx < 0 || itemNameIdx < 0) return [];
+
+  // 注文ごとのステータスを先にマップ（1行目にしかFinancial Statusがない）
+  const orderStatus = {};
+  const orderDate   = {};
+  lines.slice(1).forEach(line => {
+    const cols = line.split(sep).map(c => c.replace(/^"|"$/g,'').trim());
+    const name = cols[nameIdx] || '';
+    if (!name) return;
+    if (statusIdx >= 0 && cols[statusIdx]) orderStatus[name] = cols[statusIdx];
+    if (createdIdx >= 0 && cols[createdIdx]) {
+      // "2026-05-22 11:29:46 +0900" → "2026-05-22"
+      orderDate[name] = (cols[createdIdx] || '').slice(0, 10);
+    }
+  });
+
+  // 商品行を集計
+  const rows = [];
+  lines.slice(1).forEach(line => {
+    const cols = line.split(sep).map(c => c.replace(/^"|"$/g,'').trim());
+    const orderName = cols[nameIdx] || '';
+
+    // キャンセル・返金除外
+    if (cancelIdx >= 0 && cols[cancelIdx]) return;
+    const status = orderStatus[orderName] || '';
+    if (status === 'refunded' || status === 'voided') return;
+
+    const qty  = parseInt(cols[itemQtyIdx]) || 0;
+    if (qty <= 0) return;
+
+    const fullName = cols[itemNameIdx] || '';
+    const sku      = cols[itemSkuIdx]  || '';
+    const date     = orderDate[orderName] || '';
+
+    // "商品名 - カラー / サイズ" を分割
+    const dashIdx = fullName.indexOf(' - ');
+    const baseName = dashIdx >= 0 ? fullName.slice(0, dashIdx).trim() : fullName;
+    const variant  = dashIdx >= 0 ? fullName.slice(dashIdx + 3).trim() : '';
+    // variant例: "タータンチェック - F(6〜24ヶ月)" or "シナモンガーデン / L"
+    const slashIdx = variant.lastIndexOf('/');
+    const color = slashIdx >= 0 ? variant.slice(0, slashIdx).trim() : variant;
+    const size  = slashIdx >= 0 ? variant.slice(slashIdx + 1).trim() : '';
+
+    rows.push({ itemNo: sku, name: baseName, color, size, qty, date });
+  });
+
+  return rows;
 }
 
 // CSVパース：ZOZO（商品名・カラー・サイズ・注文数・注文日）
@@ -5440,12 +5500,7 @@ async function uploadSalesData(channel) {
   if (!file) { toast('ファイルを選択してください', 'error'); return; }
 
   let date = '', dateFrom = '', dateTo = '';
-  if (channel === 'shopify') {
-    dateFrom = document.getElementById('sa-datefrom-shopify').value;
-    dateTo   = document.getElementById('sa-dateto-shopify').value;
-    date     = dateFrom;
-    if (!dateFrom || !dateTo) { toast('期間を入力してください', 'error'); return; }
-  } else if (['zozo','rakuten','amazon','smaregi'].includes(channel)) {
+  if (['zozo','rakuten','amazon','smaregi','shopify'].includes(channel)) {
     // CSVから自動取得した日付を使用
     const auto = saAutoDate[channel];
     if (!auto) { toast('ファイルを選択してください（日付を検出中）', 'error'); return; }
@@ -5461,7 +5516,7 @@ async function uploadSalesData(channel) {
 
   try {
     toast('読み込み中...', 'info');
-    const text = await readSaFile(file, channel === 'shopify' ? 'Shift-JIS' : null);
+    const text = await readSaFile(file);
     let rows = [];
     if (channel === 'smaregi') rows = parseSaSmaregiCsv(text);
     else if (channel === 'shopify') rows = parseSaShopifyCsv(text);
