@@ -1337,6 +1337,7 @@ function goPage(id){
   if(id==='transit') renderShipments();
   if(id==='order'){renderOrders();renderTimeline();}
   if(id==='shipinstruct') initSiPage();
+  if(id==='salesanalysis') buildSaItemMaster();
 }
 (()=>{
   const d=new Date();
@@ -4365,6 +4366,7 @@ async function loadFromCloud(force) {
       }
     }
 
+    buildSaItemMaster();
     toast(`☁️ 同期完了 — ${allProducts.length.toLocaleString()}件取得`, 'success');
   } catch(e) {
     updateSyncStatus('error');
@@ -5145,10 +5147,27 @@ function onSaFileSelect(channel, input) {
   }
 }
 
+// S.productsから品番マスターを構築（クラウド同期後に呼ぶ）
+function buildSaItemMaster() {
+  if (!S.products || !S.products.length) return;
+  S.products.forEach(p => {
+    if (!p.itemNo) return;
+    saItemMaster[p.itemNo] = {
+      name:  p.name  || '',
+      color: p.color || '',
+      size:  p.size  || '',
+    };
+    // JANコードがあればJAN→品番マッピングも更新
+    if (p.jan) saJanToItemNo[p.jan] = p.itemNo;
+  });
+}
+
 // CSVから日付を自動検出してdisplayに表示、saAutoDateに保存
 const saAutoDate = {};
-// JAN → 品番 変換テーブル（スマレジCSV取込時に生成）
+// JAN → 品番 変換テーブル（スマレジCSV取込・S.products同期時に生成）
 const saJanToItemNo = {};
+// 品番 → {name, color, size} マスターテーブル（S.products同期時に生成）
+const saItemMaster = {};
 async function detectSaDate(channel, file) {
   const displayEl = document.getElementById(`sa-date-display-${channel}`);
   if (displayEl) displayEl.textContent = '📅 日付検出中...';
@@ -5296,14 +5315,17 @@ function parseSaSmaregiCsv(text) {
     const cols = line.split(',').map(c=>c.replace(/^"|"$/g,'').trim());
     const jan    = cols[idx.jan]||'';
     const itemNo = cols[idx.itemNo]||'';
-    // JAN→品番マッピングを更新
+    const name   = cols[idx.name]||'';
+    const color  = cols[idx.color]||'';
+    const size   = cols[idx.size]||'';
+    // JAN→品番マッピングを更新（楽天との名寄せ用）
     if (jan && itemNo) saJanToItemNo[jan] = itemNo;
     return {
       itemNo,
       jan,
-      name:   cols[idx.name]||'',
-      color:  cols[idx.color]||'',
-      size:   cols[idx.size]||'',
+      name,
+      color,
+      size,
       qty:    parseInt(cols[idx.qty])||0,
     };
   }).filter(r => r.qty > 0);
@@ -5362,16 +5384,11 @@ function parseSaShopifyCsv(text) {
     const sku      = cols[itemSkuIdx]  || '';
     const date     = orderDate[orderName] || '';
 
-    // "商品名 - カラー / サイズ" を分割
+    // " - " 以降はカラー/サイズが混在するため無視、商品名とSKUのみ使用
     const dashIdx = fullName.indexOf(' - ');
     const baseName = dashIdx >= 0 ? fullName.slice(0, dashIdx).trim() : fullName;
-    const variant  = dashIdx >= 0 ? fullName.slice(dashIdx + 3).trim() : '';
-    // variant例: "タータンチェック - F(6〜24ヶ月)" or "シナモンガーデン / L"
-    const slashIdx = variant.lastIndexOf('/');
-    const color = slashIdx >= 0 ? variant.slice(0, slashIdx).trim() : variant;
-    const size  = slashIdx >= 0 ? variant.slice(slashIdx + 1).trim() : '';
 
-    rows.push({ itemNo: sku, name: baseName, color, size, qty, date });
+    rows.push({ itemNo: sku, name: baseName, color: '', size: '', qty, date });
   });
 
   return rows;
@@ -5589,43 +5606,35 @@ function renderSaRanking(rows) {
     return;
   }
 
-  // 品番をキーに集計（品番なしはJAN→品番変換を試みる、それもなければ商品名フォールバック）
-  // パス1：Shopifyデータを先に処理してサイズ表記の基準を作る
+  // 品番キーで全チャネル合算（スマレジマスターでカラー・サイズ・商品名を補完）
   const groupMap = {};
-  const shopifyRows = rows.filter(r => r.channel === 'shopify');
-  const otherRows   = rows.filter(r => r.channel !== 'shopify');
 
-  const addRow = (r, isShopify) => {
+  const addRow = (r) => {
     const itemNo   = r.itemNo || saJanToItemNo[r.jan||''] || '';
     const groupKey = itemNo || r.name || '不明';
+    const master   = itemNo ? saItemMaster[itemNo] : null;
     if (!groupMap[groupKey]) groupMap[groupKey] = {
       itemNo,
-      label: r.name || groupKey,
+      label: master ? master.name : (r.name || groupKey),
+      color: master ? master.color : (r.color || ''),
+      size:  master ? master.size  : (r.size  || ''),
       total: 0,
-      shopifySizes: {}, // Shopify基準のサイズ別集計
-      sizes: {},        // フォールバック用（Shopifyデータなし時）
       channels: new Set(),
     };
     const g = groupMap[groupKey];
-    // 商品名：ZOZO以外を優先
-    if (r.name && r.channel !== 'zozo') g.label = r.name;
+    // マスターデータがあれば常に正式名称で上書き
+    if (master) {
+      g.label = master.name  || g.label;
+      g.color = master.color || g.color;
+      g.size  = master.size  || g.size;
+    } else if (r.name && r.channel !== 'zozo') {
+      g.label = r.name;
+    }
     g.total += r.qty;
     if (r.channel) g.channels.add(r.channel);
-
-    if (isShopify) {
-      // Shopifyのサイズは正式表記として登録
-      const sz = r.size || '—';
-      g.shopifySizes[sz] = (g.shopifySizes[sz]||0) + r.qty;
-    } else {
-      // 非Shopify：Shopifyにサイズデータがあれば合算のみ（内訳は持たない）
-      // Shopifyサイズがない場合のフォールバック用
-      const sz = r.size || '—';
-      g.sizes[sz] = (g.sizes[sz]||0) + r.qty;
-    }
   };
 
-  shopifyRows.forEach(r => addRow(r, true));
-  otherRows.forEach(r => addRow(r, false));
+  rows.forEach(r => addRow(r));
 
   const sorted = Object.entries(groupMap).sort((a,b) => b[1].total - a[1].total);
   const maxQty = sorted[0]?.[1].total || 1;
@@ -5633,19 +5642,7 @@ function renderSaRanking(rows) {
   container.innerHTML = sorted.map(([key, g], i) => {
     const rank    = i + 1;
     const pct     = Math.round(g.total / maxQty * 100);
-    // サイズ内訳：Shopify表記を優先、なければフォールバック
-    const displaySizes = Object.keys(g.shopifySizes).length > 0 ? g.shopifySizes : g.sizes;
-    const hasSizes = Object.keys(displaySizes).length > 0;
-    const sizeRows = Object.entries(displaySizes)
-      .sort((a,b) => b[1]-a[1])
-      .map(([sz, qty]) => `
-        <div style="display:flex;align-items:center;gap:8px;padding:4px 0">
-          <div style="font-size:11px;color:var(--muted);width:120px;flex-shrink:0">${sz}</div>
-          <div style="flex:1;height:6px;background:var(--rule);border-radius:3px">
-            <div style="height:100%;width:${Math.round(qty/g.total*100)}%;background:var(--blue);border-radius:3px;opacity:0.5"></div>
-          </div>
-          <div style="font-size:12px;font-weight:700;width:40px;text-align:right">${qty}</div>
-        </div>`).join('');
+    const colorSize = [g.color, g.size].filter(Boolean).join(' / ');
 
     const rankColor = rank === 1 ? '#f5a623' : rank === 2 ? '#aaa' : rank === 3 ? '#cd7f32' : 'var(--muted)';
     const rankLabel = rank <= 3 ? ['🥇','🥈','🥉'][rank-1] : `${rank}`;
@@ -5656,13 +5653,13 @@ function renderSaRanking(rows) {
       return `<span style="font-size:9px;padding:1px 5px;border-radius:3px;background:${chColor};color:white;font-weight:700">${chLabel}</span>`;
     }).join(' ');
     return `<div style="border-bottom:1px solid var(--rule);padding:12px 0">
-      <div style="display:flex;align-items:center;gap:10px;cursor:${hasSizes?'pointer':'default'}"
-           onclick="${hasSizes ? `toggleSaDetail('sa-detail-${i}')` : ''}">
+      <div style="display:flex;align-items:center;gap:10px">
         <div style="font-size:${rank<=3?'18px':'13px'};font-weight:700;color:${rankColor};width:32px;text-align:center;flex-shrink:0">${rankLabel}</div>
         <div style="flex:1;min-width:0">
           <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
             <span style="font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${g.label}</span>
             ${g.itemNo ? `<span style="font-size:10px;color:var(--muted);font-family:'DM Mono',monospace">${g.itemNo}</span>` : ''}
+            ${colorSize ? `<span style="font-size:11px;color:var(--ink2)">${colorSize}</span>` : ''}
             ${chBadges}
           </div>
           <div style="margin-top:4px;height:8px;background:var(--rule);border-radius:4px">
@@ -5670,9 +5667,7 @@ function renderSaRanking(rows) {
           </div>
         </div>
         <div style="font-size:16px;font-weight:900;color:var(--blue);width:60px;text-align:right;flex-shrink:0">${g.total}<span style="font-size:10px;font-weight:400;color:var(--muted)">点</span></div>
-        ${hasSizes ? `<div style="font-size:14px;color:var(--muted)">▼</div>` : ''}
       </div>
-      ${hasSizes ? `<div id="sa-detail-${i}" style="display:none;padding:8px 12px 4px 42px">${sizeRows}</div>` : ''}
     </div>`;
   }).join('');
 }
