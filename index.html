@@ -154,6 +154,7 @@ tbody tr:hover { background: #faf9f7; }
 .btn-ghost { background: none; border: 1.5px solid var(--rule); color: var(--ink2); }
 .btn-ghost:hover { background: var(--surface2); }
 .sa-ch-btn.active { background: var(--ink); color: white; border-color: var(--ink); }
+.sa-metric-btn.active { background: var(--blue); color: white; border-color: var(--blue); }
 .btn-sm { padding: 5px 10px; font-size: 11px; }
 .btn-icon { padding: 6px 8px; background: none; border: 1.5px solid var(--rule); border-radius: var(--r-sm); cursor: pointer; font-size: 13px; color: var(--muted); transition: all 0.15s; }
 .btn-icon:hover { background: var(--surface2); color: var(--ink); border-color: var(--muted); }
@@ -5018,6 +5019,7 @@ function initSiPage() {
      売上分析ページ（新規追加）
      ============================================================ -->
 <div class="page" id="page-salesanalysis">
+<div class="container">
   <div class="section-title">📣 売上分析</div>
   <div class="section-sub">チャネル横断のファーストセラーを確認・蓄積データで昨年比較も可能</div>
 
@@ -5104,6 +5106,10 @@ function initSiPage() {
         <button class="btn btn-ghost btn-sm sa-ch-btn" data-ch="amazon" onclick="setSaChannel('amazon')">Amazon</button>
       </div>
       <div class="spacer"></div>
+      <div style="display:flex;gap:4px">
+        <button class="btn btn-ghost btn-sm sa-metric-btn active" data-metric="qty" onclick="setSaMetric('qty')">点数</button>
+        <button class="btn btn-ghost btn-sm sa-metric-btn" data-metric="amount" onclick="setSaMetric('amount')">金額</button>
+      </div>
       <button class="btn btn-primary" onclick="fetchSalesRanking()">集計する</button>
     </div>
 
@@ -5115,7 +5121,8 @@ function initSiPage() {
     </div>
     <div id="sa-ranking"></div>
   </div>
-</div>
+</div><!-- /container -->
+</div><!-- /page-salesanalysis -->
 
 <script>
 // ============================================================
@@ -5124,6 +5131,14 @@ function initSiPage() {
 
 const saFiles = {}; // チャネル → File
 let saChannel = 'all';
+let saMetric  = 'qty'; // 'qty' or 'amount'
+
+function setSaMetric(metric) {
+  saMetric = metric;
+  document.querySelectorAll('.sa-metric-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.metric === metric);
+  });
+}
 
 // 今日の日付をデフォルトにセット
 (function initSaDates() {
@@ -5326,7 +5341,8 @@ function parseSaSmaregiCsv(text) {
       name,
       color,
       size,
-      qty:    parseInt(cols[idx.qty])||0,
+      qty:   parseInt(cols[idx.qty])||0,
+      price: 0, // スマレジ売上CSVには単価列なし
     };
   }).filter(r => r.qty > 0);
 }
@@ -5348,7 +5364,8 @@ function parseSaShopifyCsv(text) {
   const itemQtyIdx  = col('Lineitem quantity');
   const itemNameIdx = col('Lineitem name');
   const itemSkuIdx  = col('Lineitem sku');
-  const cancelIdx   = col('Cancelled at');
+  const cancelIdx    = col('Cancelled at');
+  const itemPriceIdx = col('Lineitem price');
 
   if (itemQtyIdx < 0 || itemNameIdx < 0) return [];
 
@@ -5388,7 +5405,8 @@ function parseSaShopifyCsv(text) {
     const dashIdx = fullName.indexOf(' - ');
     const baseName = dashIdx >= 0 ? fullName.slice(0, dashIdx).trim() : fullName;
 
-    rows.push({ itemNo: sku, name: baseName, color: '', size: '', qty, date });
+    const price = parseFloat(cols[itemPriceIdx] || '0') || 0;
+    rows.push({ itemNo: sku, name: baseName, color: '', size: '', qty, date, price });
   });
 
   return rows;
@@ -5409,6 +5427,7 @@ function parseSaZozoCsv(text) {
     size:   headers.indexOf('サイズ'),
     qty:    headers.indexOf('注文数'),
     date:   headers.indexOf('注文日'),
+    price:  headers.indexOf('販売価格（税抜）'),
   };
   return lines.slice(startIdx+1).map(line => {
     const cols = line.split(sep).map(c=>c.replace(/^"|"$/g,'').trim());
@@ -5417,6 +5436,7 @@ function parseSaZozoCsv(text) {
     const date = /^\d{8}$/.test(rawDate)
       ? `${rawDate.slice(0,4)}-${rawDate.slice(4,6)}-${rawDate.slice(6,8)}`
       : rawDate;
+    const price = idx.price >= 0 ? (parseInt(cols[idx.price])||0) : 0;
     return {
       itemNo: cols[idx.itemNo]||'',
       name:   cols[idx.name]||'',
@@ -5424,6 +5444,7 @@ function parseSaZozoCsv(text) {
       size:   cols[idx.size]||'',
       qty:    parseInt(cols[idx.qty])||0,
       date,
+      price,
     };
   }).filter(r => r.qty > 0);
 }
@@ -5441,8 +5462,9 @@ function parseSaRakutenCsv(text) {
     color: headers.indexOf('カラー名'),
     size:  headers.indexOf('サイズ名'),
     qty:   headers.indexOf('売上数'),
-    date:  headers.indexOf('対象日'),
-    jan:   headers.indexOf('JANコード'),
+    date:   headers.indexOf('対象日'),
+    jan:    headers.indexOf('JANコード'),
+    amount: headers.indexOf('売上額'),
   };
   return lines.slice(headerIdx+1).map(line => {
     const cols = line.split(sep).map(c=>c.replace(/^"|"$/g,'').trim());
@@ -5452,14 +5474,18 @@ function parseSaRakutenCsv(text) {
     const jan    = idx.jan >= 0 ? (cols[idx.jan]||'') : '';
     // JANから品番を解決（スマレジ取込済みの場合）
     const itemNo = saJanToItemNo[jan] || '';
+    const qty    = parseInt(cols[idx.qty])||0;
+    const amount = idx.amount >= 0 ? (parseInt((cols[idx.amount]||'0').replace(/[¥,]/g,''))||0) : 0;
+    const price  = qty > 0 ? Math.round(amount / qty) : 0;
     return {
       itemNo,
       jan,
       name:   cols[idx.name]||'',
       color:  cols[idx.color]||'',
       size:   cols[idx.size]||'',
-      qty:    parseInt(cols[idx.qty])||0,
+      qty,
       date,
+      price,
     };
   }).filter(r => r.qty > 0);
 }
@@ -5474,6 +5500,7 @@ function parseSaAmazonTsv(text) {
   const qtyIdx    = headers.indexOf('quantity');
   const statusIdx = headers.indexOf('item-status');
   const dateIdx   = headers.indexOf('purchase-date');
+  const priceIdx  = headers.indexOf('item-price');
   if (nameIdx < 0 || qtyIdx < 0) return [];
   // 日付ごと×SKUごとに集計
   const map = {};
@@ -5486,7 +5513,9 @@ function parseSaAmazonTsv(text) {
     const itemNo = sku.replace(/[^0-9]/g,'').slice(0,7);
     const rawDate = dateIdx >= 0 ? (cols[dateIdx]||'').slice(0,10) : '';
     const key    = `${rawDate}__${itemNo || cols[nameIdx]||''}`;
-    if (!map[key]) map[key] = { itemNo, name: cols[nameIdx]||'', color:'', size:'', qty:0, date: rawDate };
+    const unitPrice = priceIdx >= 0 ? (parseFloat(cols[priceIdx])||0) : 0;
+    if (!map[key]) map[key] = { itemNo, name: cols[nameIdx]||'', color:'', size:'', qty:0, price:0, date: rawDate };
+    map[key].price = unitPrice || map[key].price;
     map[key].qty += qty;
   });
   return Object.values(map).filter(r => r.qty > 0);
@@ -5618,7 +5647,8 @@ function renderSaRanking(rows) {
       label: master ? master.name : (r.name || groupKey),
       color: master ? master.color : (r.color || ''),
       size:  master ? master.size  : (r.size  || ''),
-      total: 0,
+      total:  0,
+      amount: 0,
       channels: new Set(),
     };
     const g = groupMap[groupKey];
@@ -5630,18 +5660,22 @@ function renderSaRanking(rows) {
     } else if (r.name && r.channel !== 'zozo') {
       g.label = r.name;
     }
-    g.total += r.qty;
+    g.total  += r.qty;
+    g.amount += r.qty * (r.price || 0);
     if (r.channel) g.channels.add(r.channel);
   };
 
   rows.forEach(r => addRow(r));
 
-  const sorted = Object.entries(groupMap).sort((a,b) => b[1].total - a[1].total);
-  const maxQty = sorted[0]?.[1].total || 1;
+  const sorted = Object.entries(groupMap).sort((a,b) => saMetric === 'amount' ? b[1].amount - a[1].amount : b[1].total - a[1].total);
+  const metricVal = g => saMetric === 'amount' ? g.amount : g.total;
+  const maxVal = metricVal(sorted[0]?.[1] || {amount:1,total:1}) || 1;
 
   container.innerHTML = sorted.map(([key, g], i) => {
     const rank    = i + 1;
-    const pct     = Math.round(g.total / maxQty * 100);
+    const pct      = Math.round(metricVal(g) / maxVal * 100);
+    const dispVal  = saMetric === 'amount' ? `¥${g.amount.toLocaleString()}` : `${g.total}`;
+    const dispUnit = saMetric === 'amount' ? '' : '<span style="font-size:10px;font-weight:400;color:var(--muted)">点</span>';
     const colorSize = [g.color, g.size].filter(Boolean).join(' / ');
 
     const rankColor = rank === 1 ? '#f5a623' : rank === 2 ? '#aaa' : rank === 3 ? '#cd7f32' : 'var(--muted)';
@@ -5666,7 +5700,7 @@ function renderSaRanking(rows) {
             <div style="height:100%;width:${pct}%;background:var(--blue);border-radius:4px;transition:width 0.3s"></div>
           </div>
         </div>
-        <div style="font-size:16px;font-weight:900;color:var(--blue);width:60px;text-align:right;flex-shrink:0">${g.total}<span style="font-size:10px;font-weight:400;color:var(--muted)">点</span></div>
+        <div style="font-size:16px;font-weight:900;color:var(--blue);min-width:80px;text-align:right;flex-shrink:0">${dispVal}${dispUnit}</div>
       </div>
     </div>`;
   }).join('');
