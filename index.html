@@ -5590,27 +5590,42 @@ function renderSaRanking(rows) {
   }
 
   // 品番をキーに集計（品番なしはJAN→品番変換を試みる、それもなければ商品名フォールバック）
+  // パス1：Shopifyデータを先に処理してサイズ表記の基準を作る
   const groupMap = {};
-  rows.forEach(r => {
-    // 品番解決：itemNo → JANからの変換 → 商品名フォールバック
+  const shopifyRows = rows.filter(r => r.channel === 'shopify');
+  const otherRows   = rows.filter(r => r.channel !== 'shopify');
+
+  const addRow = (r, isShopify) => {
     const itemNo   = r.itemNo || saJanToItemNo[r.jan||''] || '';
     const groupKey = itemNo || r.name || '不明';
     if (!groupMap[groupKey]) groupMap[groupKey] = {
       itemNo,
-      label: r.name || groupKey,  // 表示名は最初に来た商品名
+      label: r.name || groupKey,
       total: 0,
-      sizes: {},
+      shopifySizes: {}, // Shopify基準のサイズ別集計
+      sizes: {},        // フォールバック用（Shopifyデータなし時）
       channels: new Set(),
     };
-    // 同じ品番でより良い商品名があれば更新（ZOZOの独自名より他チャネルを優先）
-    if (r.name && r.channel !== 'zozo' && !groupMap[groupKey].label) {
-      groupMap[groupKey].label = r.name;
+    const g = groupMap[groupKey];
+    // 商品名：ZOZO以外を優先
+    if (r.name && r.channel !== 'zozo') g.label = r.name;
+    g.total += r.qty;
+    if (r.channel) g.channels.add(r.channel);
+
+    if (isShopify) {
+      // Shopifyのサイズは正式表記として登録
+      const sz = r.size || '—';
+      g.shopifySizes[sz] = (g.shopifySizes[sz]||0) + r.qty;
+    } else {
+      // 非Shopify：Shopifyにサイズデータがあれば合算のみ（内訳は持たない）
+      // Shopifyサイズがない場合のフォールバック用
+      const sz = r.size || '—';
+      g.sizes[sz] = (g.sizes[sz]||0) + r.qty;
     }
-    groupMap[groupKey].total += r.qty;
-    if (r.channel) groupMap[groupKey].channels.add(r.channel);
-    const sizeKey = r.size || '—';
-    groupMap[groupKey].sizes[sizeKey] = (groupMap[groupKey].sizes[sizeKey]||0) + r.qty;
-  });
+  };
+
+  shopifyRows.forEach(r => addRow(r, true));
+  otherRows.forEach(r => addRow(r, false));
 
   const sorted = Object.entries(groupMap).sort((a,b) => b[1].total - a[1].total);
   const maxQty = sorted[0]?.[1].total || 1;
@@ -5618,8 +5633,10 @@ function renderSaRanking(rows) {
   container.innerHTML = sorted.map(([key, g], i) => {
     const rank    = i + 1;
     const pct     = Math.round(g.total / maxQty * 100);
-    const hasSizes = Object.keys(g.sizes).length > 0;
-    const sizeRows = Object.entries(g.sizes)
+    // サイズ内訳：Shopify表記を優先、なければフォールバック
+    const displaySizes = Object.keys(g.shopifySizes).length > 0 ? g.shopifySizes : g.sizes;
+    const hasSizes = Object.keys(displaySizes).length > 0;
+    const sizeRows = Object.entries(displaySizes)
       .sort((a,b) => b[1]-a[1])
       .map(([sz, qty]) => `
         <div style="display:flex;align-items:center;gap:8px;padding:4px 0">
