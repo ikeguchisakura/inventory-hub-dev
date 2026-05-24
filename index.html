@@ -5147,6 +5147,8 @@ function onSaFileSelect(channel, input) {
 
 // CSVから日付を自動検出してdisplayに表示、saAutoDateに保存
 const saAutoDate = {};
+// JAN → 品番 変換テーブル（スマレジCSV取込時に生成）
+const saJanToItemNo = {};
 async function detectSaDate(channel, file) {
   const displayEl = document.getElementById(`sa-date-display-${channel}`);
   if (displayEl) displayEl.textContent = '📅 日付検出中...';
@@ -5283,6 +5285,7 @@ function parseSaSmaregiCsv(text) {
   if (lines.length < 2) return [];
   const headers = lines[0].split(',').map(h=>h.replace(/^"|"$/g,'').trim());
   const idx = {
+    jan:    headers.indexOf('商品コード'),
     itemNo: headers.indexOf('品番'),
     name:   headers.indexOf('商品名'),
     color:  headers.indexOf('カラー'),
@@ -5291,8 +5294,13 @@ function parseSaSmaregiCsv(text) {
   };
   return lines.slice(1).map(line => {
     const cols = line.split(',').map(c=>c.replace(/^"|"$/g,'').trim());
+    const jan    = cols[idx.jan]||'';
+    const itemNo = cols[idx.itemNo]||'';
+    // JAN→品番マッピングを更新
+    if (jan && itemNo) saJanToItemNo[jan] = itemNo;
     return {
-      itemNo: cols[idx.itemNo]||'',
+      itemNo,
+      jan,
       name:   cols[idx.name]||'',
       color:  cols[idx.color]||'',
       size:   cols[idx.size]||'',
@@ -5417,15 +5425,19 @@ function parseSaRakutenCsv(text) {
     size:  headers.indexOf('サイズ名'),
     qty:   headers.indexOf('売上数'),
     date:  headers.indexOf('対象日'),
+    jan:   headers.indexOf('JANコード'),
   };
   return lines.slice(headerIdx+1).map(line => {
     const cols = line.split(sep).map(c=>c.replace(/^"|"$/g,'').trim());
     const rawDate = cols[idx.date] || '';
-    // 2026/5/20 → 2026-05-20
     const m = rawDate.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})$/);
     const date = m ? `${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}` : rawDate;
+    const jan    = idx.jan >= 0 ? (cols[idx.jan]||'') : '';
+    // JANから品番を解決（スマレジ取込済みの場合）
+    const itemNo = saJanToItemNo[jan] || '';
     return {
-      itemNo: '',
+      itemNo,
+      jan,
       name:   cols[idx.name]||'',
       color:  cols[idx.color]||'',
       size:   cols[idx.size]||'',
@@ -5577,16 +5589,27 @@ function renderSaRanking(rows) {
     return;
   }
 
-  // 商品名＋カラーでグルーピング（Amazonは品番、Shopifyは商品名のみ）
+  // 品番をキーに集計（品番なしはJAN→品番変換を試みる、それもなければ商品名フォールバック）
   const groupMap = {};
   rows.forEach(r => {
-    const groupKey = r.color ? `${r.name}__${r.color}` : r.name;
-    const label    = r.color ? `${r.name}　${r.color}` : r.name;
-    if (!groupMap[groupKey]) groupMap[groupKey] = { label, total: 0, sizes: {} };
-    groupMap[groupKey].total += r.qty;
-    if (r.size) {
-      groupMap[groupKey].sizes[r.size] = (groupMap[groupKey].sizes[r.size]||0) + r.qty;
+    // 品番解決：itemNo → JANからの変換 → 商品名フォールバック
+    const itemNo   = r.itemNo || saJanToItemNo[r.jan||''] || '';
+    const groupKey = itemNo || r.name || '不明';
+    if (!groupMap[groupKey]) groupMap[groupKey] = {
+      itemNo,
+      label: r.name || groupKey,  // 表示名は最初に来た商品名
+      total: 0,
+      sizes: {},
+      channels: new Set(),
+    };
+    // 同じ品番でより良い商品名があれば更新（ZOZOの独自名より他チャネルを優先）
+    if (r.name && r.channel !== 'zozo' && !groupMap[groupKey].label) {
+      groupMap[groupKey].label = r.name;
     }
+    groupMap[groupKey].total += r.qty;
+    if (r.channel) groupMap[groupKey].channels.add(r.channel);
+    const sizeKey = r.size || '—';
+    groupMap[groupKey].sizes[sizeKey] = (groupMap[groupKey].sizes[sizeKey]||0) + r.qty;
   });
 
   const sorted = Object.entries(groupMap).sort((a,b) => b[1].total - a[1].total);
@@ -5610,12 +5633,21 @@ function renderSaRanking(rows) {
     const rankColor = rank === 1 ? '#f5a623' : rank === 2 ? '#aaa' : rank === 3 ? '#cd7f32' : 'var(--muted)';
     const rankLabel = rank <= 3 ? ['🥇','🥈','🥉'][rank-1] : `${rank}`;
 
+    const chBadges = [...g.channels].map(ch => {
+      const chColor = {smaregi:'var(--ink)',shopify:'#96bf48',zozo:'var(--purple)',rakuten:'#bf0000',amazon:'#ff9900'}[ch]||'var(--muted)';
+      const chLabel = {smaregi:'店舗',shopify:'Web',zozo:'ZOZO',rakuten:'楽天',amazon:'Amazon'}[ch]||ch;
+      return `<span style="font-size:9px;padding:1px 5px;border-radius:3px;background:${chColor};color:white;font-weight:700">${chLabel}</span>`;
+    }).join(' ');
     return `<div style="border-bottom:1px solid var(--rule);padding:12px 0">
       <div style="display:flex;align-items:center;gap:10px;cursor:${hasSizes?'pointer':'default'}"
            onclick="${hasSizes ? `toggleSaDetail('sa-detail-${i}')` : ''}">
         <div style="font-size:${rank<=3?'18px':'13px'};font-weight:700;color:${rankColor};width:32px;text-align:center;flex-shrink:0">${rankLabel}</div>
         <div style="flex:1;min-width:0">
-          <div style="font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${g.label}</div>
+          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+            <span style="font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${g.label}</span>
+            ${g.itemNo ? `<span style="font-size:10px;color:var(--muted);font-family:'DM Mono',monospace">${g.itemNo}</span>` : ''}
+            ${chBadges}
+          </div>
           <div style="margin-top:4px;height:8px;background:var(--rule);border-radius:4px">
             <div style="height:100%;width:${pct}%;background:var(--blue);border-radius:4px;transition:width 0.3s"></div>
           </div>
